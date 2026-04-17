@@ -1,0 +1,30 @@
+# Build directories
+/build/
+
+# CMake and Ninja generated files
+/CMakeCache.txt
+/CMakeFiles/
+/cmake_install.cmake
+/compile_commands.json
+/build.ninja
+/.ninja_deps
+/.ninja_log
+
+# Generated binaries and IR
+/bitc
+/test_llvm_capi
+*.o
+*.obj
+*.so
+*.a
+*.out
+*.ll
+*.bc
+
+# Editor and OS files
+.DS_Store
+*.swp
+*.swo
+
+# Local Codex state
+.codex
