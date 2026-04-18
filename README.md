@@ -154,3 +154,41 @@ source
   -> LLVM IR
   -> object / executable
 ```
+
+## 当前阶段
+
+当前原型已经打通两个很小的阶段：
+
+- stage0A：生成最小可验证的 LLVM IR 模块
+- stage0B：把源码扫描成独立 token 流
+
+目前 lexer 支持的最小 token 集包括：
+
+- `fn`
+- `return`
+- `i32`
+- `(`
+- `)`
+- `{`
+- `}`
+- `->`
+- `,`
+- `:`
+- `;`
+- 标识符
+- 十进制整数字面量
+- `EOF`
+- `INVALID`
+
+## 构建计划
+
+当前仓库使用 CMake 构建。下面的命令都可以从仓库根目录直接运行：
+
+- `cmake -S . -B build`
+  生成构建目录。
+- `cmake --build build`
+  编译当前原型工具。
+- `./build/bitc examples/hello.bit -o hello.ll`
+  运行 stage0A 的最小 IR 输出链路。
+- `./build/test_lexer examples/hello.bit`
+  单独运行 stage0B lexer，打印 token 流与行列号。
