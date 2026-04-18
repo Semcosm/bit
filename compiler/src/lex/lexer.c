@@ -160,14 +160,20 @@ BitToken bit_lexer_next(BitLexer *lexer) {
             return bit_make_token(lexer, BIT_TOKEN_COLON, start, line, column);
         case '=':
             return bit_make_token(lexer, BIT_TOKEN_EQUAL, start, line, column);
-        case ';':
-            return bit_make_token(lexer, BIT_TOKEN_SEMICOLON, start, line, column);
+        case '+':
+            return bit_make_token(lexer, BIT_TOKEN_PLUS, start, line, column);
         case '-':
             if (bit_lexer_peek(lexer) == '>') {
                 bit_lexer_advance(lexer);
                 return bit_make_token(lexer, BIT_TOKEN_ARROW, start, line, column);
             }
-            break;
+            return bit_make_token(lexer, BIT_TOKEN_MINUS, start, line, column);
+        case '*':
+            return bit_make_token(lexer, BIT_TOKEN_STAR, start, line, column);
+        case '/':
+            return bit_make_token(lexer, BIT_TOKEN_SLASH, start, line, column);
+        case ';':
+            return bit_make_token(lexer, BIT_TOKEN_SEMICOLON, start, line, column);
     }
 
     return bit_make_token(lexer, BIT_TOKEN_INVALID, start, line, column);

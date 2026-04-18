@@ -110,6 +110,29 @@ static void bit_irgen_dispose(BitIrgenContext *ctx) {
     }
 }
 
+static LLVMValueRef bit_create_entry_alloca(BitIrgenContext *ctx, LLVMTypeRef type) {
+    LLVMValueRef function = LLVMGetBasicBlockParent(LLVMGetInsertBlock(ctx->builder));
+    LLVMBasicBlockRef entry = LLVMGetEntryBasicBlock(function);
+    LLVMValueRef first_instruction = LLVMGetFirstInstruction(entry);
+    LLVMBuilderRef builder = LLVMCreateBuilderInContext(ctx->llctx);
+    LLVMValueRef alloca;
+
+    if (!builder) {
+        bit_irgen_fail(ctx, "failed to create temporary LLVM builder", bit_empty_span());
+        return NULL;
+    }
+
+    if (first_instruction) {
+        LLVMPositionBuilderBefore(builder, first_instruction);
+    } else {
+        LLVMPositionBuilderAtEnd(builder, entry);
+    }
+
+    alloca = LLVMBuildAlloca(builder, type, "");
+    LLVMDisposeBuilder(builder);
+    return alloca;
+}
+
 static LLVMTypeRef bit_lower_type(BitIrgenContext *ctx, const BitTypeRef *type) {
     switch (type->kind) {
         case BIT_TYPE_I32:
@@ -172,6 +195,36 @@ static LLVMValueRef bit_lower_expr(BitIrgenContext *ctx, const BitExpr *expr) {
 
             return LLVMBuildLoad2(ctx->builder, local->type, local->storage, "");
         }
+        case BIT_EXPR_BINARY: {
+            LLVMValueRef left;
+            LLVMValueRef right;
+
+            if (!expr->as.binary.left || !expr->as.binary.right) {
+                bit_irgen_fail(ctx, "binary expression requires both operands", expr->span);
+                return NULL;
+            }
+
+            left = bit_lower_expr(ctx, expr->as.binary.left);
+            if (!left) {
+                return NULL;
+            }
+
+            right = bit_lower_expr(ctx, expr->as.binary.right);
+            if (!right) {
+                return NULL;
+            }
+
+            switch (expr->as.binary.op) {
+                case BIT_BINARY_OP_ADD:
+                    return LLVMBuildAdd(ctx->builder, left, right, "");
+                case BIT_BINARY_OP_SUB:
+                    return LLVMBuildSub(ctx->builder, left, right, "");
+                case BIT_BINARY_OP_MUL:
+                    return LLVMBuildMul(ctx->builder, left, right, "");
+                case BIT_BINARY_OP_DIV:
+                    return LLVMBuildSDiv(ctx->builder, left, right, "");
+            }
+        }
     }
 
     bit_irgen_fail(ctx, "unsupported expression", expr->span);
@@ -199,9 +252,12 @@ static int bit_lower_stmt(BitIrgenContext *ctx, const BitStmt *stmt) {
                 return 0;
             }
 
-            storage = LLVMBuildAlloca(ctx->builder, type, "");
-            LLVMBuildStore(ctx->builder, initializer, storage);
+            storage = bit_create_entry_alloca(ctx, type);
+            if (!storage) {
+                return 0;
+            }
 
+            LLVMBuildStore(ctx->builder, initializer, storage);
             return bit_irgen_bind_local(ctx, stmt->as.let.name, type, storage, stmt->span);
         }
         case BIT_STMT_RETURN: {

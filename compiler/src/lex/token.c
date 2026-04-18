@@ -32,6 +32,14 @@ const char *bit_token_kind_name(BitTokenKind kind) {
             return "COLON";
         case BIT_TOKEN_EQUAL:
             return "EQUAL";
+        case BIT_TOKEN_PLUS:
+            return "PLUS";
+        case BIT_TOKEN_MINUS:
+            return "MINUS";
+        case BIT_TOKEN_STAR:
+            return "STAR";
+        case BIT_TOKEN_SLASH:
+            return "SLASH";
         case BIT_TOKEN_SEMICOLON:
             return "SEMICOLON";
         case BIT_TOKEN_INVALID:

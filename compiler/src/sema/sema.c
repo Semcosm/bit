@@ -115,6 +115,29 @@ static int bit_check_expr(BitSemaContext *ctx, const BitExpr *expr, BitTypeKind 
             *type_out = symbol->type;
             return 1;
         }
+        case BIT_EXPR_BINARY: {
+            BitTypeKind left_type;
+            BitTypeKind right_type;
+
+            if (!expr->as.binary.left || !expr->as.binary.right) {
+                return bit_sema_fail(ctx, "binary expression requires both operands", expr->span);
+            }
+
+            if (!bit_check_expr(ctx, expr->as.binary.left, &left_type)) {
+                return 0;
+            }
+
+            if (!bit_check_expr(ctx, expr->as.binary.right, &right_type)) {
+                return 0;
+            }
+
+            if (left_type != BIT_TYPE_I32 || right_type != BIT_TYPE_I32) {
+                return bit_sema_fail(ctx, "binary operands must be i32", expr->span);
+            }
+
+            *type_out = BIT_TYPE_I32;
+            return 1;
+        }
     }
 
     return bit_sema_fail(ctx, "unsupported expression", expr->span);

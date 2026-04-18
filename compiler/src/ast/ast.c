@@ -19,6 +19,21 @@ static const char *bit_type_kind_name(BitTypeKind kind) {
     return "unknown";
 }
 
+static const char *bit_binary_op_name(BitBinaryOpKind op) {
+    switch (op) {
+        case BIT_BINARY_OP_ADD:
+            return "+";
+        case BIT_BINARY_OP_SUB:
+            return "-";
+        case BIT_BINARY_OP_MUL:
+            return "*";
+        case BIT_BINARY_OP_DIV:
+            return "/";
+    }
+
+    return "?";
+}
+
 static void bit_ast_dump_expr(FILE *stream, const BitExpr *expr, int indent) {
     bit_ast_print_indent(stream, indent);
 
@@ -33,6 +48,13 @@ static void bit_ast_dump_expr(FILE *stream, const BitExpr *expr, int indent) {
                 (int)expr->as.name.name.length,
                 expr->as.name.name.data
             );
+            return;
+        case BIT_EXPR_BINARY:
+            fprintf(stream, "(binary op=\"%s\"\n", bit_binary_op_name(expr->as.binary.op));
+            bit_ast_dump_expr(stream, expr->as.binary.left, indent + 1);
+            fputc('\n', stream);
+            bit_ast_dump_expr(stream, expr->as.binary.right, indent + 1);
+            fputc(')', stream);
             return;
     }
 }

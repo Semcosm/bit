@@ -33,6 +33,18 @@ static BitSourceSpan bit_span_from_range(const BitToken *start, const BitToken *
     return span;
 }
 
+static BitSourceSpan bit_span_from_expr_range(const BitExpr *left, const BitExpr *right) {
+    BitSourceSpan span;
+    const char *start_ptr = left->span.start;
+    const char *end_ptr = right->span.start + right->span.length;
+
+    span.start = start_ptr;
+    span.length = (size_t)(end_ptr - start_ptr);
+    span.line = left->span.line;
+    span.column = left->span.column;
+    return span;
+}
+
 static const BitToken *bit_parser_fallback_token(void) {
     static const BitToken token = {
         BIT_TOKEN_EOF,
@@ -151,6 +163,34 @@ static int bit_parse_integer_value(BitParser *parser, const BitToken *token, uin
     return 1;
 }
 
+static BitBinaryOpKind bit_token_binary_op(BitTokenKind kind) {
+    switch (kind) {
+        case BIT_TOKEN_PLUS:
+            return BIT_BINARY_OP_ADD;
+        case BIT_TOKEN_MINUS:
+            return BIT_BINARY_OP_SUB;
+        case BIT_TOKEN_STAR:
+            return BIT_BINARY_OP_MUL;
+        case BIT_TOKEN_SLASH:
+            return BIT_BINARY_OP_DIV;
+        default:
+            return BIT_BINARY_OP_ADD;
+    }
+}
+
+static int bit_parser_binary_precedence(BitTokenKind kind) {
+    switch (kind) {
+        case BIT_TOKEN_PLUS:
+        case BIT_TOKEN_MINUS:
+            return 10;
+        case BIT_TOKEN_STAR:
+        case BIT_TOKEN_SLASH:
+            return 20;
+        default:
+            return -1;
+    }
+}
+
 static int bit_parse_type_ref(BitParser *parser, BitTypeRef *type_out) {
     const BitToken *token = bit_parser_expect(parser, BIT_TOKEN_KW_I32, "expected type");
 
@@ -163,20 +203,9 @@ static int bit_parse_type_ref(BitParser *parser, BitTypeRef *type_out) {
     return 1;
 }
 
-static BitExpr *bit_parse_integer_expr(BitParser *parser) {
-    BitExpr *expr;
-    const BitToken *token = bit_parser_expect(parser, BIT_TOKEN_INTEGER, "expected integer literal");
-    uint64_t value;
+static BitExpr *bit_make_integer_expr(BitParser *parser, const BitToken *token, uint64_t value) {
+    BitExpr *expr = (BitExpr *)bit_parser_alloc(parser, sizeof(BitExpr));
 
-    if (!token) {
-        return NULL;
-    }
-
-    if (!bit_parse_integer_value(parser, token, &value)) {
-        return NULL;
-    }
-
-    expr = (BitExpr *)bit_parser_alloc(parser, sizeof(BitExpr));
     if (!expr) {
         bit_parser_set_error(parser, "out of memory", token, NULL, 0);
         return NULL;
@@ -189,15 +218,9 @@ static BitExpr *bit_parse_integer_expr(BitParser *parser) {
     return expr;
 }
 
-static BitExpr *bit_parse_name_expr(BitParser *parser) {
-    BitExpr *expr;
-    const BitToken *token = bit_parser_expect(parser, BIT_TOKEN_IDENTIFIER, "expected identifier");
+static BitExpr *bit_make_name_expr(BitParser *parser, const BitToken *token) {
+    BitExpr *expr = (BitExpr *)bit_parser_alloc(parser, sizeof(BitExpr));
 
-    if (!token) {
-        return NULL;
-    }
-
-    expr = (BitExpr *)bit_parser_alloc(parser, sizeof(BitExpr));
     if (!expr) {
         bit_parser_set_error(parser, "out of memory", token, NULL, 0);
         return NULL;
@@ -211,8 +234,71 @@ static BitExpr *bit_parse_name_expr(BitParser *parser) {
     return expr;
 }
 
-static BitExpr *bit_parse_expr(BitParser *parser) {
-    BitTokenKind expected[2] = {BIT_TOKEN_IDENTIFIER, BIT_TOKEN_INTEGER};
+static BitExpr *bit_make_binary_expr(BitParser *parser, BitBinaryOpKind op, BitExpr *left, BitExpr *right) {
+    BitExpr *expr = (BitExpr *)bit_parser_alloc(parser, sizeof(BitExpr));
+
+    if (!expr) {
+        bit_parser_set_error(parser, "out of memory", bit_parser_current(parser), NULL, 0);
+        return NULL;
+    }
+
+    expr->kind = BIT_EXPR_BINARY;
+    expr->span = bit_span_from_expr_range(left, right);
+    expr->as.binary.op = op;
+    expr->as.binary.left = left;
+    expr->as.binary.right = right;
+    expr->as.binary.span = expr->span;
+    return expr;
+}
+
+static BitExpr *bit_parse_expr(BitParser *parser);
+
+static BitExpr *bit_parse_integer_expr(BitParser *parser) {
+    const BitToken *token = bit_parser_expect(parser, BIT_TOKEN_INTEGER, "expected integer literal");
+    uint64_t value;
+
+    if (!token) {
+        return NULL;
+    }
+
+    if (!bit_parse_integer_value(parser, token, &value)) {
+        return NULL;
+    }
+
+    return bit_make_integer_expr(parser, token, value);
+}
+
+static BitExpr *bit_parse_name_expr(BitParser *parser) {
+    const BitToken *token = bit_parser_expect(parser, BIT_TOKEN_IDENTIFIER, "expected identifier");
+
+    if (!token) {
+        return NULL;
+    }
+
+    return bit_make_name_expr(parser, token);
+}
+
+static BitExpr *bit_parse_paren_expr(BitParser *parser) {
+    BitExpr *expr;
+
+    if (!bit_parser_expect(parser, BIT_TOKEN_LPAREN, "expected '('")) {
+        return NULL;
+    }
+
+    expr = bit_parse_expr(parser);
+    if (!expr) {
+        return NULL;
+    }
+
+    if (!bit_parser_expect(parser, BIT_TOKEN_RPAREN, "expected ')'")) {
+        return NULL;
+    }
+
+    return expr;
+}
+
+static BitExpr *bit_parse_primary_expr(BitParser *parser) {
+    BitTokenKind expected[3] = {BIT_TOKEN_LPAREN, BIT_TOKEN_IDENTIFIER, BIT_TOKEN_INTEGER};
     const BitToken *current = bit_parser_current(parser);
 
     switch (current->kind) {
@@ -220,13 +306,63 @@ static BitExpr *bit_parse_expr(BitParser *parser) {
             return bit_parse_integer_expr(parser);
         case BIT_TOKEN_IDENTIFIER:
             return bit_parse_name_expr(parser);
+        case BIT_TOKEN_LPAREN:
+            return bit_parse_paren_expr(parser);
         case BIT_TOKEN_INVALID:
             bit_parser_set_error(parser, "invalid token", current, NULL, 0);
             return NULL;
         default:
-            bit_parser_set_error(parser, "expected expression", current, expected, 2);
+            bit_parser_set_error(parser, "expected expression", current, expected, 3);
             return NULL;
     }
+}
+
+static BitExpr *bit_parse_binary_expr_rhs(BitParser *parser, int min_precedence, BitExpr *left) {
+    for (;;) {
+        BitTokenKind operator_kind = bit_parser_current(parser)->kind;
+        int precedence = bit_parser_binary_precedence(operator_kind);
+        BitExpr *right;
+
+        if (precedence < min_precedence) {
+            return left;
+        }
+
+        bit_parser_advance(parser);
+
+        right = bit_parse_primary_expr(parser);
+        if (!right) {
+            return NULL;
+        }
+
+        for (;;) {
+            BitTokenKind next_kind = bit_parser_current(parser)->kind;
+            int next_precedence = bit_parser_binary_precedence(next_kind);
+
+            if (next_precedence <= precedence) {
+                break;
+            }
+
+            right = bit_parse_binary_expr_rhs(parser, next_precedence, right);
+            if (!right) {
+                return NULL;
+            }
+        }
+
+        left = bit_make_binary_expr(parser, bit_token_binary_op(operator_kind), left, right);
+        if (!left) {
+            return NULL;
+        }
+    }
+}
+
+static BitExpr *bit_parse_expr(BitParser *parser) {
+    BitExpr *left = bit_parse_primary_expr(parser);
+
+    if (!left) {
+        return NULL;
+    }
+
+    return bit_parse_binary_expr_rhs(parser, 0, left);
 }
 
 static BitStmt *bit_parse_let_stmt(BitParser *parser) {
