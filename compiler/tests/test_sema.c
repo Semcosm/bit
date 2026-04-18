@@ -1,6 +1,5 @@
 #include "bit/arena.h"
 #include "bit/file.h"
-#include "bit/irgen.h"
 #include "bit/lexer.h"
 #include "bit/parser.h"
 #include "bit/sema.h"
@@ -10,8 +9,6 @@
 
 int main(int argc, char **argv) {
     BitArena *arena = NULL;
-    BitIrgenOptions irgen_options;
-    BitIrgenResult irgen_result;
     BitParseResult parse_result;
     BitSemaResult sema_result;
     BitToken *tokens = NULL;
@@ -20,8 +17,8 @@ int main(int argc, char **argv) {
     size_t source_length = 0;
     int status = 1;
 
-    if (argc != 3) {
-        fprintf(stderr, "usage: %s <input.bit> <output.ll>\n", argv[0]);
+    if (argc != 2) {
+        fprintf(stderr, "usage: %s <input.bit>\n", argv[0]);
         return 1;
     }
 
@@ -52,16 +49,7 @@ int main(int argc, char **argv) {
         goto cleanup;
     }
 
-    irgen_options.module_name = "bit_test_module";
-    irgen_options.source_name = argv[1];
-    irgen_options.verify_module = 1;
-
-    irgen_result = bit_emit_llvm_ir_file(parse_result.module, &irgen_options, argv[2]);
-    if (irgen_result.status != BIT_IRGEN_OK) {
-        bit_print_irgen_diagnostic(stderr, &irgen_result.diagnostic);
-        goto cleanup;
-    }
-
+    puts("sema ok");
     status = 0;
 
 cleanup:

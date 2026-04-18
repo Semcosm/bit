@@ -34,83 +34,79 @@ separate_arguments(LLVM_LDFLAGS_LIST NATIVE_COMMAND "${LLVM_LDFLAGS}")
 separate_arguments(LLVM_LIBS_LIST NATIVE_COMMAND "${LLVM_LIBS}")
 separate_arguments(LLVM_SYSTEM_LIBS_LIST NATIVE_COMMAND "${LLVM_SYSTEM_LIBS}")
 
-add_executable(bitc
-    compiler/src/main/main.c
-    compiler/src/irgen/irgen.c
+add_library(bit_frontend_core STATIC
     compiler/src/ast/ast.c
     compiler/src/lex/lexer.c
     compiler/src/parse/parser.c
+    compiler/src/sema/sema.c
     compiler/src/lex/token.c
     compiler/src/support/arena.c
     compiler/src/support/file.c
 )
 
-target_include_directories(bitc PRIVATE
+target_include_directories(bit_frontend_core PUBLIC
     compiler/include
 )
 
-target_compile_options(bitc PRIVATE
+add_library(bit_backend_llvm STATIC
+    compiler/src/irgen/irgen.c
+)
+
+target_include_directories(bit_backend_llvm PUBLIC
+    compiler/include
+)
+
+target_compile_options(bit_backend_llvm PRIVATE
     ${LLVM_CFLAGS_LIST}
 )
 
-target_link_options(bitc PRIVATE
+target_link_options(bit_backend_llvm PRIVATE
     ${LLVM_LDFLAGS_LIST}
 )
 
-target_link_libraries(bitc PRIVATE
+target_link_libraries(bit_backend_llvm PRIVATE
     ${LLVM_LIBS_LIST}
     ${LLVM_SYSTEM_LIBS_LIST}
+)
+
+add_executable(bitc
+    compiler/src/main/main.c
+)
+
+target_link_libraries(bitc PRIVATE
+    bit_frontend_core
+    bit_backend_llvm
 )
 
 add_executable(test_lexer
     compiler/tests/test_lexer.c
-    compiler/src/lex/lexer.c
-    compiler/src/lex/token.c
-    compiler/src/support/file.c
 )
 
-target_include_directories(test_lexer PRIVATE
-    compiler/include
+target_link_libraries(test_lexer PRIVATE
+    bit_frontend_core
 )
 
 add_executable(test_parser
     compiler/tests/test_parser.c
-    compiler/src/ast/ast.c
-    compiler/src/lex/lexer.c
-    compiler/src/parse/parser.c
-    compiler/src/lex/token.c
-    compiler/src/support/arena.c
-    compiler/src/support/file.c
 )
 
-target_include_directories(test_parser PRIVATE
-    compiler/include
+target_link_libraries(test_parser PRIVATE
+    bit_frontend_core
+)
+
+add_executable(test_sema
+    compiler/tests/test_sema.c
+)
+
+target_link_libraries(test_sema PRIVATE
+    bit_frontend_core
 )
 
 add_executable(test_irgen
     compiler/tests/test_irgen.c
-    compiler/src/irgen/irgen.c
-    compiler/src/ast/ast.c
-    compiler/src/lex/lexer.c
-    compiler/src/parse/parser.c
-    compiler/src/lex/token.c
-    compiler/src/support/arena.c
-    compiler/src/support/file.c
-)
-
-target_include_directories(test_irgen PRIVATE
-    compiler/include
-)
-
-target_compile_options(test_irgen PRIVATE
-    ${LLVM_CFLAGS_LIST}
-)
-
-target_link_options(test_irgen PRIVATE
-    ${LLVM_LDFLAGS_LIST}
 )
 
 target_link_libraries(test_irgen PRIVATE
-    ${LLVM_LIBS_LIST}
-    ${LLVM_SYSTEM_LIBS_LIST}
+    bit_frontend_core
+    bit_backend_llvm
 )

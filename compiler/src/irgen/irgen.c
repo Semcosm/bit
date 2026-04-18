@@ -298,3 +298,13 @@ done:
     bit_irgen_dispose(&ctx);
     return result;
 }
+
+void bit_print_irgen_diagnostic(FILE *stream, const BitIrgenDiagnostic *diagnostic) {
+    fprintf(
+        stream,
+        "irgen error: %s at %zu:%zu\n",
+        diagnostic->message ? diagnostic->message : "unknown error",
+        diagnostic->span.line,
+        diagnostic->span.column
+    );
+}

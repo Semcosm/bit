@@ -7,24 +7,16 @@
 #include "bit/irgen.h"
 #include "bit/lexer.h"
 #include "bit/parser.h"
+#include "bit/sema.h"
 
 static void bit_print_usage(const char *prog) {
     fprintf(stderr, "usage: %s <input.bit> -o <output.ll>\n", prog);
 }
 
-static void bit_print_irgen_error(const BitIrgenDiagnostic *diagnostic) {
-    fprintf(
-        stderr,
-        "irgen error: %s at %zu:%zu\n",
-        diagnostic->message ? diagnostic->message : "unknown error",
-        diagnostic->span.line,
-        diagnostic->span.column
-    );
-}
-
 int main(int argc, char **argv) {
     BitArena *arena = NULL;
     BitParseResult parse_result;
+    BitSemaResult sema_result;
     BitIrgenOptions irgen_options;
     BitIrgenResult irgen_result;
     BitToken *tokens = NULL;
@@ -84,19 +76,26 @@ int main(int argc, char **argv) {
         goto cleanup;
     }
 
+    sema_result = bit_analyze_module(parse_result.module);
+    if (sema_result.status != BIT_SEMA_OK) {
+        bit_print_sema_diagnostic(stderr, &sema_result.diagnostic);
+        goto cleanup;
+    }
+
     irgen_options.module_name = "bit_module";
     irgen_options.source_name = input_path;
     irgen_options.verify_module = 1;
 
     irgen_result = bit_emit_llvm_ir_file(parse_result.module, &irgen_options, output_path);
     if (irgen_result.status != BIT_IRGEN_OK) {
-        bit_print_irgen_error(&irgen_result.diagnostic);
+        bit_print_irgen_diagnostic(stderr, &irgen_result.diagnostic);
         goto cleanup;
     }
 
     printf("bitc: input = %s\n", input_path);
     printf("bitc: output = %s\n", output_path);
     printf("bitc: parsed module successfully\n");
+    printf("bitc: semantic analysis succeeded\n");
     printf("bitc: emitted LLVM IR successfully\n");
     status = 0;
 

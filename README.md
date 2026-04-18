@@ -157,12 +157,13 @@ source
 
 ## 当前阶段
 
-当前原型已经打通四个很小的阶段：
+当前原型已经打通五个很小的阶段：
 
 - stage0A：生成最小可验证的 LLVM IR 模块
 - stage0B：把源码扫描成独立 token 流
 - stage0C：把最小 token 流收束成独立 AST
 - stage0D：把最小 AST lower 成真实 LLVM IR
+- stage0E：在 AST 和 LLVM IR 之间插入独立语义检查
 
 目前 lexer 支持的最小 token 集包括：
 
@@ -192,6 +193,13 @@ fn main() -> i32 {
 
 成功解析后会生成最小 AST；失败时会在第一处错误直接停止，并报告 token 与行列号。
 
+当前 sema 会在 IR 生成前做最小语义检查：
+
+- 当前模块必须只包含一个 `main`
+- `main` 当前必须返回 `i32`
+- `return` 必须带表达式
+- 十进制整数字面量必须落在 `i32` 正范围内
+
 当前 irgen 会把这棵最小 AST lower 成真实 LLVM IR，并保留很小的防御性校验：
 
 - 只接受 `i32`
@@ -212,5 +220,7 @@ fn main() -> i32 {
   单独运行 stage0B lexer，打印 token 流与行列号。
 - `./build/test_parser examples/hello.bit`
   单独运行 stage0C parser，打印稳定 AST dump。
+- `./build/test_sema examples/hello.bit`
+  单独运行 stage0E sema，验证最小语义规则。
 - `./build/test_irgen examples/hello.bit hello.ll`
-  单独运行 stage0D irgen，把 AST lower 成 `.ll` 文件。
+  单独运行 stage0D/stage0E 后的 lowering 链路，把 AST lower 成 `.ll` 文件。
