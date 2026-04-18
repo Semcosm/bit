@@ -26,11 +26,31 @@ static void bit_ast_dump_expr(FILE *stream, const BitExpr *expr, int indent) {
         case BIT_EXPR_INTEGER:
             fprintf(stream, "(int %" PRIu64 ")", expr->as.integer.value);
             return;
+        case BIT_EXPR_IDENTIFIER:
+            fprintf(
+                stream,
+                "(name \"%.*s\")",
+                (int)expr->as.name.name.length,
+                expr->as.name.name.data
+            );
+            return;
     }
 }
 
 static void bit_ast_dump_stmt(FILE *stream, const BitStmt *stmt, int indent) {
     switch (stmt->kind) {
+        case BIT_STMT_LET:
+            bit_ast_print_indent(stream, indent);
+            fprintf(
+                stream,
+                "(let name=\"%.*s\" type=%s\n",
+                (int)stmt->as.let.name.length,
+                stmt->as.let.name.data,
+                bit_type_kind_name(stmt->as.let.type.kind)
+            );
+            bit_ast_dump_expr(stream, stmt->as.let.initializer, indent + 1);
+            fputc(')', stream);
+            return;
         case BIT_STMT_RETURN:
             bit_ast_print_indent(stream, indent);
             fputs("(return\n", stream);

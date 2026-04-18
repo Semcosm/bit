@@ -28,12 +28,18 @@ typedef struct BitTypeRef {
 
 typedef enum BitExprKind {
     BIT_EXPR_INTEGER = 0,
+    BIT_EXPR_IDENTIFIER,
 } BitExprKind;
 
 typedef struct BitIntegerExpr {
     uint64_t value;
     BitSourceSpan span;
 } BitIntegerExpr;
+
+typedef struct BitNameExpr {
+    BitStringView name;
+    BitSourceSpan span;
+} BitNameExpr;
 
 typedef struct BitExpr BitExpr;
 typedef struct BitStmt BitStmt;
@@ -43,12 +49,21 @@ struct BitExpr {
     BitSourceSpan span;
     union {
         BitIntegerExpr integer;
+        BitNameExpr name;
     } as;
 };
 
 typedef enum BitStmtKind {
-    BIT_STMT_RETURN = 0,
+    BIT_STMT_LET = 0,
+    BIT_STMT_RETURN,
 } BitStmtKind;
+
+typedef struct BitLetStmt {
+    BitStringView name;
+    BitTypeRef type;
+    BitExpr *initializer;
+    BitSourceSpan span;
+} BitLetStmt;
 
 typedef struct BitReturnStmt {
     BitExpr *expr;
@@ -59,6 +74,7 @@ struct BitStmt {
     BitStmtKind kind;
     BitSourceSpan span;
     union {
+        BitLetStmt let;
         BitReturnStmt ret;
     } as;
 };

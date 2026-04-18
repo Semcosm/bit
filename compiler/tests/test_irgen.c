@@ -62,6 +62,7 @@ int main(int argc, char **argv) {
         goto cleanup;
     }
 
+    puts("irgen ok");
     status = 0;
 
 cleanup:

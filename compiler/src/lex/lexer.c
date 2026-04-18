@@ -72,6 +72,10 @@ static BitTokenKind bit_identifier_kind(const char *start, size_t length) {
         return BIT_TOKEN_KW_I32;
     }
 
+    if (length == 3 && start[0] == 'l' && start[1] == 'e' && start[2] == 't') {
+        return BIT_TOKEN_KW_LET;
+    }
+
     if (length == 6 &&
         start[0] == 'r' &&
         start[1] == 'e' &&
@@ -154,6 +158,8 @@ BitToken bit_lexer_next(BitLexer *lexer) {
             return bit_make_token(lexer, BIT_TOKEN_COMMA, start, line, column);
         case ':':
             return bit_make_token(lexer, BIT_TOKEN_COLON, start, line, column);
+        case '=':
+            return bit_make_token(lexer, BIT_TOKEN_EQUAL, start, line, column);
         case ';':
             return bit_make_token(lexer, BIT_TOKEN_SEMICOLON, start, line, column);
         case '-':

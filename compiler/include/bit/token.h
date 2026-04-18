@@ -9,6 +9,7 @@ typedef enum BitTokenKind {
     BIT_TOKEN_INTEGER,
 
     BIT_TOKEN_KW_FN,
+    BIT_TOKEN_KW_LET,
     BIT_TOKEN_KW_RETURN,
     BIT_TOKEN_KW_I32,
 
@@ -19,6 +20,7 @@ typedef enum BitTokenKind {
     BIT_TOKEN_ARROW,
     BIT_TOKEN_COMMA,
     BIT_TOKEN_COLON,
+    BIT_TOKEN_EQUAL,
     BIT_TOKEN_SEMICOLON,
 
     BIT_TOKEN_INVALID

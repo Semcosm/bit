@@ -157,18 +157,20 @@ source
 
 ## 当前阶段
 
-当前原型已经打通五个很小的阶段：
+当前原型已经打通五个很小的阶段，并开始进入 stage1A：
 
 - stage0A：生成最小可验证的 LLVM IR 模块
 - stage0B：把源码扫描成独立 token 流
 - stage0C：把最小 token 流收束成独立 AST
 - stage0D：把最小 AST lower 成真实 LLVM IR
 - stage0E：在 AST 和 LLVM IR 之间插入独立语义检查
+- stage1A：加入局部绑定、标识符表达式和最小名字解析
 
 目前 lexer 支持的最小 token 集包括：
 
 - `fn`
 - `return`
+- `let`
 - `i32`
 - `(`
 - `)`
@@ -177,6 +179,7 @@ source
 - `->`
 - `,`
 - `:`
+- `=`
 - `;`
 - 标识符
 - 十进制整数字面量
@@ -187,7 +190,8 @@ source
 
 ```bit
 fn main() -> i32 {
-    return 0;
+    let value: i32 = 0;
+    return value;
 }
 ```
 
@@ -197,14 +201,16 @@ fn main() -> i32 {
 
 - 当前模块必须只包含一个 `main`
 - `main` 当前必须返回 `i32`
+- 局部绑定不能重名
+- 标识符表达式必须先定义再使用
 - `return` 必须带表达式
 - 十进制整数字面量必须落在 `i32` 正范围内
 
-当前 irgen 会把这棵最小 AST lower 成真实 LLVM IR，并保留很小的防御性校验：
+当前 irgen 会把这棵最小 AST lower 成真实 LLVM IR，并只保留 backend 侧的防御性校验：
 
 - 只接受 `i32`
-- 只接受最小 `return INTEGER;`
-- 十进制整数字面量必须落在 `i32` 正范围内
+- 遇到未知局部绑定或不完整 AST 会直接停止
+- 生成结果仍会走 LLVM verify
 
 ## 构建计划
 
@@ -215,7 +221,7 @@ fn main() -> i32 {
 - `cmake --build build`
   编译当前原型工具。
 - `./build/bitc examples/hello.bit -o hello.ll`
-  运行当前最小前端链路：`lexer -> parser -> AST -> LLVM IR`。
+  运行当前最小前端链路：`lexer -> parser -> AST -> semantic analysis -> LLVM IR`。
 - `./build/test_lexer examples/hello.bit`
   单独运行 stage0B lexer，打印 token 流与行列号。
 - `./build/test_parser examples/hello.bit`

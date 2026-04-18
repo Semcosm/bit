@@ -10,6 +10,8 @@ const char *bit_token_kind_name(BitTokenKind kind) {
             return "INTEGER";
         case BIT_TOKEN_KW_FN:
             return "KW_FN";
+        case BIT_TOKEN_KW_LET:
+            return "KW_LET";
         case BIT_TOKEN_KW_RETURN:
             return "KW_RETURN";
         case BIT_TOKEN_KW_I32:
@@ -28,6 +30,8 @@ const char *bit_token_kind_name(BitTokenKind kind) {
             return "COMMA";
         case BIT_TOKEN_COLON:
             return "COLON";
+        case BIT_TOKEN_EQUAL:
+            return "EQUAL";
         case BIT_TOKEN_SEMICOLON:
             return "SEMICOLON";
         case BIT_TOKEN_INVALID:

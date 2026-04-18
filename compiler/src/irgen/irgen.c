@@ -1,10 +1,16 @@
 #include "bit/irgen.h"
 
-#include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <llvm-c/Analysis.h>
 #include <llvm-c/Core.h>
+
+typedef struct BitIrgenLocal {
+    BitStringView name;
+    LLVMTypeRef type;
+    LLVMValueRef storage;
+} BitIrgenLocal;
 
 typedef struct BitIrgenContext {
     LLVMContextRef llctx;
@@ -12,9 +18,11 @@ typedef struct BitIrgenContext {
     LLVMBuilderRef builder;
 
     LLVMTypeRef i32_type;
-    LLVMValueRef current_function;
 
     BitIrgenDiagnostic diagnostic;
+    BitIrgenLocal *locals;
+    size_t local_count;
+    size_t local_capacity;
     int failed;
 } BitIrgenContext;
 
@@ -42,6 +50,10 @@ static int bit_irgen_fail(BitIrgenContext *ctx, const char *message, BitSourceSp
     ctx->diagnostic.message = message;
     ctx->diagnostic.span = span;
     return 0;
+}
+
+static int bit_string_view_equals(BitStringView left, BitStringView right) {
+    return left.length == right.length && strncmp(left.data, right.data, left.length) == 0;
 }
 
 static int bit_irgen_init(BitIrgenContext *ctx, const BitIrgenOptions *options) {
@@ -76,11 +88,15 @@ static int bit_irgen_init(BitIrgenContext *ctx, const BitIrgenOptions *options) 
     }
 
     ctx->i32_type = LLVMInt32TypeInContext(ctx->llctx);
-    ctx->current_function = NULL;
+    ctx->locals = NULL;
+    ctx->local_count = 0;
+    ctx->local_capacity = 0;
     return 1;
 }
 
 static void bit_irgen_dispose(BitIrgenContext *ctx) {
+    free(ctx->locals);
+
     if (ctx->builder) {
         LLVMDisposeBuilder(ctx->builder);
     }
@@ -104,15 +120,58 @@ static LLVMTypeRef bit_lower_type(BitIrgenContext *ctx, const BitTypeRef *type) 
     return NULL;
 }
 
+static const BitIrgenLocal *bit_irgen_find_local(const BitIrgenContext *ctx, BitStringView name) {
+    size_t i = ctx->local_count;
+
+    while (i > 0) {
+        const BitIrgenLocal *local = &ctx->locals[i - 1];
+
+        if (bit_string_view_equals(local->name, name)) {
+            return local;
+        }
+
+        --i;
+    }
+
+    return NULL;
+}
+
+static int bit_irgen_bind_local(BitIrgenContext *ctx, BitStringView name, LLVMTypeRef type, LLVMValueRef storage, BitSourceSpan span) {
+    BitIrgenLocal *new_locals;
+
+    if (ctx->local_count == ctx->local_capacity) {
+        size_t new_capacity = ctx->local_capacity == 0 ? 8 : ctx->local_capacity * 2;
+
+        new_locals = (BitIrgenLocal *)realloc(ctx->locals, new_capacity * sizeof(BitIrgenLocal));
+        if (!new_locals) {
+            return bit_irgen_fail(ctx, "out of memory", span);
+        }
+
+        ctx->locals = new_locals;
+        ctx->local_capacity = new_capacity;
+    }
+
+    ctx->locals[ctx->local_count].name = name;
+    ctx->locals[ctx->local_count].type = type;
+    ctx->locals[ctx->local_count].storage = storage;
+    ctx->local_count += 1;
+    return 1;
+}
+
 static LLVMValueRef bit_lower_expr(BitIrgenContext *ctx, const BitExpr *expr) {
     switch (expr->kind) {
         case BIT_EXPR_INTEGER:
-            if (expr->as.integer.value > INT32_MAX) {
-                bit_irgen_fail(ctx, "integer literal out of range for i32", expr->span);
+            return LLVMConstInt(ctx->i32_type, expr->as.integer.value, 0);
+        case BIT_EXPR_IDENTIFIER: {
+            const BitIrgenLocal *local = bit_irgen_find_local(ctx, expr->as.name.name);
+
+            if (!local) {
+                bit_irgen_fail(ctx, "unresolved local binding", expr->span);
                 return NULL;
             }
 
-            return LLVMConstInt(ctx->i32_type, expr->as.integer.value, 0);
+            return LLVMBuildLoad2(ctx->builder, local->type, local->storage, "");
+        }
     }
 
     bit_irgen_fail(ctx, "unsupported expression", expr->span);
@@ -121,6 +180,30 @@ static LLVMValueRef bit_lower_expr(BitIrgenContext *ctx, const BitExpr *expr) {
 
 static int bit_lower_stmt(BitIrgenContext *ctx, const BitStmt *stmt) {
     switch (stmt->kind) {
+        case BIT_STMT_LET: {
+            LLVMTypeRef type;
+            LLVMValueRef initializer;
+            LLVMValueRef storage;
+
+            if (!stmt->as.let.initializer) {
+                return bit_irgen_fail(ctx, "let statement requires an initializer", stmt->span);
+            }
+
+            type = bit_lower_type(ctx, &stmt->as.let.type);
+            if (!type) {
+                return 0;
+            }
+
+            initializer = bit_lower_expr(ctx, stmt->as.let.initializer);
+            if (!initializer) {
+                return 0;
+            }
+
+            storage = LLVMBuildAlloca(ctx->builder, type, "");
+            LLVMBuildStore(ctx->builder, initializer, storage);
+
+            return bit_irgen_bind_local(ctx, stmt->as.let.name, type, storage, stmt->span);
+        }
         case BIT_STMT_RETURN: {
             LLVMValueRef value;
 
@@ -165,6 +248,7 @@ static int bit_lower_function(BitIrgenContext *ctx, const BitFunctionDecl *funct
         return 0;
     }
 
+    ctx->local_count = 0;
     fn_type = LLVMFunctionType(return_type, NULL, 0, 0);
     fn_value = LLVMAddFunction(ctx->llmod, "", fn_type);
     if (!fn_value) {
@@ -172,7 +256,6 @@ static int bit_lower_function(BitIrgenContext *ctx, const BitFunctionDecl *funct
     }
 
     LLVMSetValueName2(fn_value, function->name.data, function->name.length);
-    ctx->current_function = fn_value;
     entry = LLVMAppendBasicBlockInContext(ctx->llctx, fn_value, "entry");
     LLVMPositionBuilderAtEnd(ctx->builder, entry);
 
@@ -253,9 +336,11 @@ BitIrgenResult bit_emit_llvm_ir_file(
     ctx.llmod = NULL;
     ctx.builder = NULL;
     ctx.i32_type = NULL;
-    ctx.current_function = NULL;
     ctx.diagnostic.message = NULL;
     ctx.diagnostic.span = bit_empty_span();
+    ctx.locals = NULL;
+    ctx.local_count = 0;
+    ctx.local_capacity = 0;
     ctx.failed = 0;
 
     if (options) {

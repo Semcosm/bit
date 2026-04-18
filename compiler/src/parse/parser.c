@@ -1,6 +1,7 @@
 #include "bit/parser.h"
 
 #include <stdint.h>
+#include <stdlib.h>
 
 typedef struct BitParser {
     const BitToken *tokens;
@@ -188,6 +189,101 @@ static BitExpr *bit_parse_integer_expr(BitParser *parser) {
     return expr;
 }
 
+static BitExpr *bit_parse_name_expr(BitParser *parser) {
+    BitExpr *expr;
+    const BitToken *token = bit_parser_expect(parser, BIT_TOKEN_IDENTIFIER, "expected identifier");
+
+    if (!token) {
+        return NULL;
+    }
+
+    expr = (BitExpr *)bit_parser_alloc(parser, sizeof(BitExpr));
+    if (!expr) {
+        bit_parser_set_error(parser, "out of memory", token, NULL, 0);
+        return NULL;
+    }
+
+    expr->kind = BIT_EXPR_IDENTIFIER;
+    expr->span = bit_span_from_token(token);
+    expr->as.name.name.data = token->start;
+    expr->as.name.name.length = token->length;
+    expr->as.name.span = expr->span;
+    return expr;
+}
+
+static BitExpr *bit_parse_expr(BitParser *parser) {
+    BitTokenKind expected[2] = {BIT_TOKEN_IDENTIFIER, BIT_TOKEN_INTEGER};
+    const BitToken *current = bit_parser_current(parser);
+
+    switch (current->kind) {
+        case BIT_TOKEN_INTEGER:
+            return bit_parse_integer_expr(parser);
+        case BIT_TOKEN_IDENTIFIER:
+            return bit_parse_name_expr(parser);
+        case BIT_TOKEN_INVALID:
+            bit_parser_set_error(parser, "invalid token", current, NULL, 0);
+            return NULL;
+        default:
+            bit_parser_set_error(parser, "expected expression", current, expected, 2);
+            return NULL;
+    }
+}
+
+static BitStmt *bit_parse_let_stmt(BitParser *parser) {
+    BitStmt *stmt;
+    BitTypeRef type;
+    BitExpr *initializer;
+    const BitToken *let_token = bit_parser_expect(parser, BIT_TOKEN_KW_LET, "expected 'let'");
+    const BitToken *name_token;
+    const BitToken *semicolon_token;
+
+    if (!let_token) {
+        return NULL;
+    }
+
+    name_token = bit_parser_expect(parser, BIT_TOKEN_IDENTIFIER, "expected identifier");
+    if (!name_token) {
+        return NULL;
+    }
+
+    if (!bit_parser_expect(parser, BIT_TOKEN_COLON, "expected ':'")) {
+        return NULL;
+    }
+
+    if (!bit_parse_type_ref(parser, &type)) {
+        return NULL;
+    }
+
+    if (!bit_parser_expect(parser, BIT_TOKEN_EQUAL, "expected '='")) {
+        return NULL;
+    }
+
+    initializer = bit_parse_expr(parser);
+    if (!initializer) {
+        return NULL;
+    }
+
+    semicolon_token = bit_parser_expect(parser, BIT_TOKEN_SEMICOLON, "expected ';'");
+    if (!semicolon_token) {
+        return NULL;
+    }
+
+    stmt = (BitStmt *)bit_parser_alloc(parser, sizeof(BitStmt));
+    if (!stmt) {
+        bit_parser_set_error(parser, "out of memory", let_token, NULL, 0);
+        return NULL;
+    }
+
+    stmt->kind = BIT_STMT_LET;
+    stmt->span = bit_span_from_range(let_token, semicolon_token);
+    stmt->as.let.name.data = name_token->start;
+    stmt->as.let.name.length = name_token->length;
+    stmt->as.let.type = type;
+    stmt->as.let.initializer = initializer;
+    stmt->as.let.span = stmt->span;
+    return stmt;
+}
+
 static BitStmt *bit_parse_return_stmt(BitParser *parser) {
     BitStmt *stmt;
     BitExpr *expr;
@@ -198,7 +294,7 @@ static BitStmt *bit_parse_return_stmt(BitParser *parser) {
         return NULL;
     }
 
-    expr = bit_parse_integer_expr(parser);
+    expr = bit_parse_expr(parser);
     if (!expr) {
         return NULL;
     }
@@ -221,35 +317,87 @@ static BitStmt *bit_parse_return_stmt(BitParser *parser) {
     return stmt;
 }
 
+static BitStmt *bit_parse_stmt(BitParser *parser) {
+    BitTokenKind expected[2] = {BIT_TOKEN_KW_LET, BIT_TOKEN_KW_RETURN};
+    const BitToken *current = bit_parser_current(parser);
+
+    switch (current->kind) {
+        case BIT_TOKEN_KW_LET:
+            return bit_parse_let_stmt(parser);
+        case BIT_TOKEN_KW_RETURN:
+            return bit_parse_return_stmt(parser);
+        case BIT_TOKEN_INVALID:
+            bit_parser_set_error(parser, "invalid token", current, NULL, 0);
+            return NULL;
+        default:
+            bit_parser_set_error(parser, "expected statement", current, expected, 2);
+            return NULL;
+    }
+}
+
 static int bit_parse_block(BitParser *parser, BitBlock *block_out) {
-    BitStmt *stmt;
-    BitStmt **stmts;
+    BitStmt **final_stmts = NULL;
+    BitStmt **temp_stmts = NULL;
+    size_t stmt_count = 0;
+    size_t stmt_capacity = 0;
     const BitToken *left_brace = bit_parser_expect(parser, BIT_TOKEN_LBRACE, "expected '{'");
     const BitToken *right_brace;
+    size_t i;
 
     if (!left_brace) {
         return 0;
     }
 
-    stmt = bit_parse_return_stmt(parser);
-    if (!stmt) {
-        return 0;
+    while (bit_parser_current(parser)->kind != BIT_TOKEN_RBRACE && !bit_parser_is_at_end(parser)) {
+        BitStmt *stmt;
+        BitStmt **new_stmts;
+
+        stmt = bit_parse_stmt(parser);
+        if (!stmt) {
+            free(temp_stmts);
+            return 0;
+        }
+
+        if (stmt_count == stmt_capacity) {
+            size_t new_capacity = stmt_capacity == 0 ? 4 : stmt_capacity * 2;
+
+            new_stmts = (BitStmt **)realloc(temp_stmts, new_capacity * sizeof(BitStmt *));
+            if (!new_stmts) {
+                bit_parser_set_error(parser, "out of memory", bit_parser_current(parser), NULL, 0);
+                free(temp_stmts);
+                return 0;
+            }
+
+            temp_stmts = new_stmts;
+            stmt_capacity = new_capacity;
+        }
+
+        temp_stmts[stmt_count++] = stmt;
     }
 
     right_brace = bit_parser_expect(parser, BIT_TOKEN_RBRACE, "expected '}'");
     if (!right_brace) {
+        free(temp_stmts);
         return 0;
     }
 
-    stmts = (BitStmt **)bit_parser_alloc(parser, sizeof(BitStmt *));
-    if (!stmts) {
-        bit_parser_set_error(parser, "out of memory", left_brace, NULL, 0);
-        return 0;
+    if (stmt_count > 0) {
+        final_stmts = (BitStmt **)bit_parser_alloc(parser, stmt_count * sizeof(BitStmt *));
+        if (!final_stmts) {
+            bit_parser_set_error(parser, "out of memory", left_brace, NULL, 0);
+            free(temp_stmts);
+            return 0;
+        }
+
+        for (i = 0; i < stmt_count; ++i) {
+            final_stmts[i] = temp_stmts[i];
+        }
     }
 
-    stmts[0] = stmt;
-    block_out->stmts = stmts;
-    block_out->stmt_count = 1;
+    free(temp_stmts);
+
+    block_out->stmts = final_stmts;
+    block_out->stmt_count = stmt_count;
     block_out->span = bit_span_from_range(left_brace, right_brace);
     return 1;
 }
@@ -258,9 +406,6 @@ static BitFunctionDecl *bit_parse_function_decl(BitParser *parser) {
     BitFunctionDecl *function;
     const BitToken *fn_token = bit_parser_expect(parser, BIT_TOKEN_KW_FN, "expected 'fn'");
     const BitToken *name_token;
-    const BitToken *left_paren;
-    const BitToken *right_paren;
-    const BitToken *arrow_token;
     BitTypeRef return_type;
     BitBlock body;
 
@@ -273,24 +418,17 @@ static BitFunctionDecl *bit_parse_function_decl(BitParser *parser) {
         return NULL;
     }
 
-    left_paren = bit_parser_expect(parser, BIT_TOKEN_LPAREN, "expected '('");
-    if (!left_paren) {
+    if (!bit_parser_expect(parser, BIT_TOKEN_LPAREN, "expected '('")) {
         return NULL;
     }
 
-    right_paren = bit_parser_expect(parser, BIT_TOKEN_RPAREN, "expected ')'");
-    if (!right_paren) {
+    if (!bit_parser_expect(parser, BIT_TOKEN_RPAREN, "expected ')'")) {
         return NULL;
     }
 
-    arrow_token = bit_parser_expect(parser, BIT_TOKEN_ARROW, "expected '->'");
-    if (!arrow_token) {
+    if (!bit_parser_expect(parser, BIT_TOKEN_ARROW, "expected '->'")) {
         return NULL;
     }
-
-    (void)left_paren;
-    (void)right_paren;
-    (void)arrow_token;
 
     if (!bit_parse_type_ref(parser, &return_type)) {
         return NULL;
