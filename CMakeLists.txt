@@ -86,3 +86,31 @@ add_executable(test_parser
 target_include_directories(test_parser PRIVATE
     compiler/include
 )
+
+add_executable(test_irgen
+    compiler/tests/test_irgen.c
+    compiler/src/irgen/irgen.c
+    compiler/src/ast/ast.c
+    compiler/src/lex/lexer.c
+    compiler/src/parse/parser.c
+    compiler/src/lex/token.c
+    compiler/src/support/arena.c
+    compiler/src/support/file.c
+)
+
+target_include_directories(test_irgen PRIVATE
+    compiler/include
+)
+
+target_compile_options(test_irgen PRIVATE
+    ${LLVM_CFLAGS_LIST}
+)
+
+target_link_options(test_irgen PRIVATE
+    ${LLVM_LDFLAGS_LIST}
+)
+
+target_link_libraries(test_irgen PRIVATE
+    ${LLVM_LIBS_LIST}
+    ${LLVM_SYSTEM_LIBS_LIST}
+)

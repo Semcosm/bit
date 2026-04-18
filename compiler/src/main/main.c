@@ -12,9 +12,21 @@ static void bit_print_usage(const char *prog) {
     fprintf(stderr, "usage: %s <input.bit> -o <output.ll>\n", prog);
 }
 
+static void bit_print_irgen_error(const BitIrgenDiagnostic *diagnostic) {
+    fprintf(
+        stderr,
+        "irgen error: %s at %zu:%zu\n",
+        diagnostic->message ? diagnostic->message : "unknown error",
+        diagnostic->span.line,
+        diagnostic->span.column
+    );
+}
+
 int main(int argc, char **argv) {
     BitArena *arena = NULL;
     BitParseResult parse_result;
+    BitIrgenOptions irgen_options;
+    BitIrgenResult irgen_result;
     BitToken *tokens = NULL;
     char *source = NULL;
     size_t token_count = 0;
@@ -72,11 +84,21 @@ int main(int argc, char **argv) {
         goto cleanup;
     }
 
+    irgen_options.module_name = "bit_module";
+    irgen_options.source_name = input_path;
+    irgen_options.verify_module = 1;
+
+    irgen_result = bit_emit_llvm_ir_file(parse_result.module, &irgen_options, output_path);
+    if (irgen_result.status != BIT_IRGEN_OK) {
+        bit_print_irgen_error(&irgen_result.diagnostic);
+        goto cleanup;
+    }
+
     printf("bitc: input = %s\n", input_path);
     printf("bitc: output = %s\n", output_path);
     printf("bitc: parsed module successfully\n");
-    printf("bitc: stage0 stub compiler active\n");
-    status = bit_emit_minimal_module(output_path);
+    printf("bitc: emitted LLVM IR successfully\n");
+    status = 0;
 
 cleanup:
     bit_arena_destroy(arena);
