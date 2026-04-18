@@ -1,6 +1,7 @@
 #include "bit/lexer.h"
 
 #include <ctype.h>
+#include <stdlib.h>
 
 static int bit_lexer_is_at_end(const BitLexer *lexer) {
     return lexer->index >= lexer->length;
@@ -164,4 +165,42 @@ BitToken bit_lexer_next(BitLexer *lexer) {
     }
 
     return bit_make_token(lexer, BIT_TOKEN_INVALID, start, line, column);
+}
+
+int bit_lex_all(const char *source, size_t length, BitToken **tokens_out, size_t *token_count_out) {
+    BitLexer lexer;
+    BitToken *tokens = NULL;
+    size_t token_count = 0;
+    size_t capacity = 0;
+
+    bit_lexer_init(&lexer, source, length);
+
+    for (;;) {
+        BitToken token;
+        BitToken *new_tokens;
+
+        if (token_count == capacity) {
+            size_t new_capacity = capacity == 0 ? 16 : capacity * 2;
+
+            new_tokens = (BitToken *)realloc(tokens, new_capacity * sizeof(BitToken));
+            if (!new_tokens) {
+                free(tokens);
+                return 1;
+            }
+
+            tokens = new_tokens;
+            capacity = new_capacity;
+        }
+
+        token = bit_lexer_next(&lexer);
+        tokens[token_count++] = token;
+
+        if (token.kind == BIT_TOKEN_EOF || token.kind == BIT_TOKEN_INVALID) {
+            break;
+        }
+    }
+
+    *tokens_out = tokens;
+    *token_count_out = token_count;
+    return 0;
 }

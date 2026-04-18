@@ -1,61 +1,8 @@
+#include "bit/file.h"
 #include "bit/lexer.h"
 
 #include <stdio.h>
 #include <stdlib.h>
-
-static int bit_read_file(const char *path, char **buffer_out, size_t *length_out) {
-    FILE *file;
-    char *buffer;
-    long file_size;
-    size_t bytes_read;
-
-    file = fopen(path, "rb");
-    if (!file) {
-        fprintf(stderr, "error: failed to open '%s'\n", path);
-        return 1;
-    }
-
-    if (fseek(file, 0, SEEK_END) != 0) {
-        fprintf(stderr, "error: failed to seek '%s'\n", path);
-        fclose(file);
-        return 1;
-    }
-
-    file_size = ftell(file);
-    if (file_size < 0) {
-        fprintf(stderr, "error: failed to measure '%s'\n", path);
-        fclose(file);
-        return 1;
-    }
-
-    if (fseek(file, 0, SEEK_SET) != 0) {
-        fprintf(stderr, "error: failed to rewind '%s'\n", path);
-        fclose(file);
-        return 1;
-    }
-
-    buffer = (char *)malloc((size_t)file_size + 1);
-    if (!buffer) {
-        fprintf(stderr, "error: out of memory while reading '%s'\n", path);
-        fclose(file);
-        return 1;
-    }
-
-    bytes_read = fread(buffer, 1, (size_t)file_size, file);
-    if (bytes_read != (size_t)file_size) {
-        fprintf(stderr, "error: failed to read '%s'\n", path);
-        free(buffer);
-        fclose(file);
-        return 1;
-    }
-
-    buffer[bytes_read] = '\0';
-    fclose(file);
-
-    *buffer_out = buffer;
-    *length_out = bytes_read;
-    return 0;
-}
 
 static void bit_print_escaped_slice(const char *start, size_t length) {
     size_t i;
@@ -91,10 +38,11 @@ static void bit_print_escaped_slice(const char *start, size_t length) {
 }
 
 int main(int argc, char **argv) {
-    BitLexer lexer;
-    BitToken token;
+    BitToken *tokens;
     char *source;
+    size_t token_count;
     size_t length;
+    size_t i;
     int saw_invalid;
 
     if (argc != 2) {
@@ -106,11 +54,17 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    bit_lexer_init(&lexer, source, length);
+    if (bit_lex_all(source, length, &tokens, &token_count) != 0) {
+        fprintf(stderr, "error: failed to lex '%s'\n", argv[1]);
+        free(source);
+        return 1;
+    }
+
     saw_invalid = 0;
 
-    do {
-        token = bit_lexer_next(&lexer);
+    for (i = 0; i < token_count; ++i) {
+        BitToken token = tokens[i];
+
         printf("%zu:%zu %-12s ", token.line, token.column, bit_token_kind_name(token.kind));
         bit_print_escaped_slice(token.start, token.length);
         putchar('\n');
@@ -118,8 +72,9 @@ int main(int argc, char **argv) {
         if (token.kind == BIT_TOKEN_INVALID) {
             saw_invalid = 1;
         }
-    } while (token.kind != BIT_TOKEN_EOF && token.kind != BIT_TOKEN_INVALID);
+    }
 
+    free(tokens);
     free(source);
     return saw_invalid ? 1 : 0;
 }

@@ -37,8 +37,12 @@ separate_arguments(LLVM_SYSTEM_LIBS_LIST NATIVE_COMMAND "${LLVM_SYSTEM_LIBS}")
 add_executable(bitc
     compiler/src/main/main.c
     compiler/src/irgen/irgen.c
+    compiler/src/ast/ast.c
     compiler/src/lex/lexer.c
+    compiler/src/parse/parser.c
     compiler/src/lex/token.c
+    compiler/src/support/arena.c
+    compiler/src/support/file.c
 )
 
 target_include_directories(bitc PRIVATE
@@ -62,8 +66,23 @@ add_executable(test_lexer
     compiler/tests/test_lexer.c
     compiler/src/lex/lexer.c
     compiler/src/lex/token.c
+    compiler/src/support/file.c
 )
 
 target_include_directories(test_lexer PRIVATE
+    compiler/include
+)
+
+add_executable(test_parser
+    compiler/tests/test_parser.c
+    compiler/src/ast/ast.c
+    compiler/src/lex/lexer.c
+    compiler/src/parse/parser.c
+    compiler/src/lex/token.c
+    compiler/src/support/arena.c
+    compiler/src/support/file.c
+)
+
+target_include_directories(test_parser PRIVATE
     compiler/include
 )

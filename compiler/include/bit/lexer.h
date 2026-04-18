@@ -15,5 +15,6 @@ typedef struct BitLexer {
 
 void bit_lexer_init(BitLexer *lexer, const char *source, size_t length);
 BitToken bit_lexer_next(BitLexer *lexer);
+int bit_lex_all(const char *source, size_t length, BitToken **tokens_out, size_t *token_count_out);
 
 #endif
