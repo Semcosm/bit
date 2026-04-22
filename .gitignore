@@ -20,6 +20,7 @@
 *.out
 *.ll
 *.bc
+!compiler/tests/golden/irgen/*.ll
 
 # Editor and OS files
 .DS_Store
