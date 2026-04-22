@@ -14,6 +14,8 @@ static const char *bit_type_kind_name(BitTypeKind kind) {
     switch (kind) {
         case BIT_TYPE_I32:
             return "i32";
+        case BIT_TYPE_BOOL:
+            return "bool";
     }
 
     return "unknown";
@@ -29,6 +31,18 @@ static const char *bit_binary_op_name(BitBinaryOpKind op) {
             return "*";
         case BIT_BINARY_OP_DIV:
             return "/";
+        case BIT_BINARY_OP_EQUAL:
+            return "==";
+        case BIT_BINARY_OP_NOT_EQUAL:
+            return "!=";
+        case BIT_BINARY_OP_LESS:
+            return "<";
+        case BIT_BINARY_OP_LESS_EQUAL:
+            return "<=";
+        case BIT_BINARY_OP_GREATER:
+            return ">";
+        case BIT_BINARY_OP_GREATER_EQUAL:
+            return ">=";
     }
 
     return "?";
@@ -54,12 +68,17 @@ static void bit_ast_dump_param(FILE *stream, const BitParamDecl *param, int inde
     );
 }
 
+static void bit_ast_dump_block(FILE *stream, const BitBlock *block, int indent);
+
 static void bit_ast_dump_expr(FILE *stream, const BitExpr *expr, int indent) {
     bit_ast_print_indent(stream, indent);
 
     switch (expr->kind) {
         case BIT_EXPR_INTEGER:
             fprintf(stream, "(int %" PRIu64 ")", expr->as.integer.value);
+            return;
+        case BIT_EXPR_BOOL:
+            fprintf(stream, "(bool %s)", expr->as.boolean.value ? "true" : "false");
             return;
         case BIT_EXPR_IDENTIFIER:
             fprintf(
@@ -127,6 +146,16 @@ static void bit_ast_dump_stmt(FILE *stream, const BitStmt *stmt, int indent) {
             bit_ast_print_indent(stream, indent);
             fputs("(return\n", stream);
             bit_ast_dump_expr(stream, stmt->as.ret.expr, indent + 1);
+            fputc(')', stream);
+            return;
+        case BIT_STMT_IF:
+            bit_ast_print_indent(stream, indent);
+            fputs("(if\n", stream);
+            bit_ast_dump_expr(stream, stmt->as.if_stmt.condition, indent + 1);
+            fputc('\n', stream);
+            bit_ast_dump_block(stream, &stmt->as.if_stmt.then_block, indent + 1);
+            fputc('\n', stream);
+            bit_ast_dump_block(stream, &stmt->as.if_stmt.else_block, indent + 1);
             fputc(')', stream);
             return;
     }

@@ -158,6 +158,9 @@ static int bit_check_expr(BitSemaContext *ctx, const BitExpr *expr, BitTypeKind 
 
             *type_out = BIT_TYPE_I32;
             return 1;
+        case BIT_EXPR_BOOL:
+            *type_out = BIT_TYPE_BOOL;
+            return 1;
         case BIT_EXPR_IDENTIFIER: {
             const BitSemaLocalSymbol *local = bit_sema_find_local(ctx, expr->as.name.name);
 
@@ -240,20 +243,47 @@ static int bit_check_expr(BitSemaContext *ctx, const BitExpr *expr, BitTypeKind 
                 return 0;
             }
 
-            if (left_type != BIT_TYPE_I32 || right_type != BIT_TYPE_I32) {
-                return bit_sema_fail(ctx, "binary operands must be i32", expr->span);
-            }
+            switch (expr->as.binary.op) {
+                case BIT_BINARY_OP_ADD:
+                case BIT_BINARY_OP_SUB:
+                case BIT_BINARY_OP_MUL:
+                case BIT_BINARY_OP_DIV:
+                    if (left_type != BIT_TYPE_I32 || right_type != BIT_TYPE_I32) {
+                        return bit_sema_fail(ctx, "binary operands must be i32", expr->span);
+                    }
 
-            *type_out = BIT_TYPE_I32;
-            return 1;
+                    *type_out = BIT_TYPE_I32;
+                    return 1;
+                case BIT_BINARY_OP_EQUAL:
+                case BIT_BINARY_OP_NOT_EQUAL:
+                    if (left_type != right_type) {
+                        return bit_sema_fail(ctx, "equality operands must have the same type", expr->span);
+                    }
+
+                    *type_out = BIT_TYPE_BOOL;
+                    return 1;
+                case BIT_BINARY_OP_LESS:
+                case BIT_BINARY_OP_LESS_EQUAL:
+                case BIT_BINARY_OP_GREATER:
+                case BIT_BINARY_OP_GREATER_EQUAL:
+                    if (left_type != BIT_TYPE_I32 || right_type != BIT_TYPE_I32) {
+                        return bit_sema_fail(ctx, "comparison operands must be i32", expr->span);
+                    }
+
+                    *type_out = BIT_TYPE_BOOL;
+                    return 1;
+            }
         }
     }
 
     return bit_sema_fail(ctx, "unsupported expression", expr->span);
 }
 
-static int bit_check_stmt(BitSemaContext *ctx, const BitStmt *stmt) {
+static int bit_check_block(BitSemaContext *ctx, const BitBlock *block, int *always_returns_out);
+
+static int bit_check_stmt(BitSemaContext *ctx, const BitStmt *stmt, int *always_returns_out) {
     BitTypeKind expr_type;
+    int branch_returns = 0;
 
     if (!stmt) {
         return bit_sema_fail(ctx, "statement is required", bit_empty_span());
@@ -273,12 +303,16 @@ static int bit_check_stmt(BitSemaContext *ctx, const BitStmt *stmt) {
                 return bit_sema_fail(ctx, "initializer type does not match local binding type", stmt->span);
             }
 
-            return bit_sema_bind_local(
-                ctx,
-                stmt->as.let.name,
-                stmt->as.let.type.kind,
-                stmt->as.let.span
-            );
+            if (!bit_sema_bind_local(
+                    ctx,
+                    stmt->as.let.name,
+                    stmt->as.let.type.kind,
+                    stmt->as.let.span)) {
+                return 0;
+            }
+
+            *always_returns_out = 0;
+            return 1;
         case BIT_STMT_RETURN:
             if (!stmt->as.ret.expr) {
                 return bit_sema_fail(ctx, "return statement requires an expression", stmt->span);
@@ -292,39 +326,88 @@ static int bit_check_stmt(BitSemaContext *ctx, const BitStmt *stmt) {
                 return bit_sema_fail(ctx, "return type does not match function return type", stmt->span);
             }
 
+            *always_returns_out = 1;
+            return 1;
+        case BIT_STMT_IF:
+            if (!stmt->as.if_stmt.condition) {
+                return bit_sema_fail(ctx, "if statement requires a condition", stmt->span);
+            }
+
+            if (!bit_check_expr(ctx, stmt->as.if_stmt.condition, &expr_type)) {
+                return 0;
+            }
+
+            if (expr_type != BIT_TYPE_BOOL) {
+                return bit_sema_fail(ctx, "if condition must be bool", stmt->as.if_stmt.condition->span);
+            }
+
+            if (!bit_check_block(ctx, &stmt->as.if_stmt.then_block, &branch_returns)) {
+                return 0;
+            }
+
+            if (!bit_check_block(ctx, &stmt->as.if_stmt.else_block, always_returns_out)) {
+                return 0;
+            }
+
+            *always_returns_out = branch_returns && *always_returns_out;
             return 1;
     }
 
     return bit_sema_fail(ctx, "unsupported statement", stmt->span);
 }
 
+static int bit_check_block(BitSemaContext *ctx, const BitBlock *block, int *always_returns_out) {
+    size_t i;
+    size_t saved_local_count = ctx->local_count;
+    int always_returns = 0;
+
+    if (!block) {
+        return bit_sema_fail(ctx, "block is required", bit_empty_span());
+    }
+
+    for (i = 0; i < block->stmt_count; ++i) {
+        int stmt_returns = 0;
+
+        if (always_returns) {
+            ctx->local_count = saved_local_count;
+            return bit_sema_fail(ctx, "statement is unreachable", block->stmts[i]->span);
+        }
+
+        if (!bit_check_stmt(ctx, block->stmts[i], &stmt_returns)) {
+            ctx->local_count = saved_local_count;
+            return 0;
+        }
+
+        always_returns = stmt_returns;
+    }
+
+    ctx->local_count = saved_local_count;
+    *always_returns_out = always_returns;
+    return 1;
+}
+
 static int bit_check_function(BitSemaContext *ctx, const BitFunctionDecl *function) {
     size_t i;
+    int body_returns = 0;
 
     if (!function) {
         return bit_sema_fail(ctx, "function is required", bit_empty_span());
     }
 
-    if (function->return_type.kind != BIT_TYPE_I32) {
-        return bit_sema_fail(ctx, "functions must return i32", function->return_type.span);
-    }
+    if (bit_string_view_equals_text(function->name, "main")) {
+        if (function->param_count != 0) {
+            return bit_sema_fail(ctx, "main must not take parameters", function->span);
+        }
 
-    if (bit_string_view_equals_text(function->name, "main") && function->param_count != 0) {
-        return bit_sema_fail(ctx, "main must not take parameters", function->span);
-    }
-
-    if (function->body.stmt_count == 0) {
-        return bit_sema_fail(ctx, "function body must contain statements", function->body.span);
+        if (function->return_type.kind != BIT_TYPE_I32) {
+            return bit_sema_fail(ctx, "main must return i32", function->return_type.span);
+        }
     }
 
     ctx->local_count = 0;
     ctx->current_return_type = function->return_type.kind;
 
     for (i = 0; i < function->param_count; ++i) {
-        if (function->params[i].type.kind != BIT_TYPE_I32) {
-            return bit_sema_fail(ctx, "function parameters must be i32", function->params[i].span);
-        }
-
         if (!bit_sema_bind_local(
                 ctx,
                 function->params[i].name,
@@ -334,18 +417,12 @@ static int bit_check_function(BitSemaContext *ctx, const BitFunctionDecl *functi
         }
     }
 
-    for (i = 0; i < function->body.stmt_count; ++i) {
-        if (function->body.stmts[i]->kind == BIT_STMT_RETURN && i + 1 != function->body.stmt_count) {
-            return bit_sema_fail(ctx, "return must be the final statement in a block", function->body.stmts[i]->span);
-        }
-
-        if (!bit_check_stmt(ctx, function->body.stmts[i])) {
-            return 0;
-        }
+    if (!bit_check_block(ctx, &function->body, &body_returns)) {
+        return 0;
     }
 
-    if (function->body.stmts[function->body.stmt_count - 1]->kind != BIT_STMT_RETURN) {
-        return bit_sema_fail(ctx, "function body must end with return", function->body.span);
+    if (!body_returns) {
+        return bit_sema_fail(ctx, "function body must return on all paths", function->body.span);
     }
 
     return 1;

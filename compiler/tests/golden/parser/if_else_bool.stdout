@@ -1,0 +1,27 @@
+(module
+  (fn name="is_small" ret=bool
+    (params
+      (param name="value" type=i32))
+    (block
+      (if
+        (binary op="<"
+          (name "value")
+          (int 10))
+        (block
+          (return
+            (bool true)))
+        (block
+          (return
+            (bool false))))))
+  (fn name="main" ret=i32
+    (params)
+    (block
+      (if
+        (call callee="is_small"
+          (int 3))
+        (block
+          (return
+            (int 1)))
+        (block
+          (return
+            (int 0)))))))

@@ -201,6 +201,18 @@ static BitBinaryOpKind bit_token_binary_op(BitTokenKind kind) {
             return BIT_BINARY_OP_MUL;
         case BIT_TOKEN_SLASH:
             return BIT_BINARY_OP_DIV;
+        case BIT_TOKEN_EQUAL_EQUAL:
+            return BIT_BINARY_OP_EQUAL;
+        case BIT_TOKEN_BANG_EQUAL:
+            return BIT_BINARY_OP_NOT_EQUAL;
+        case BIT_TOKEN_LESS:
+            return BIT_BINARY_OP_LESS;
+        case BIT_TOKEN_LESS_EQUAL:
+            return BIT_BINARY_OP_LESS_EQUAL;
+        case BIT_TOKEN_GREATER:
+            return BIT_BINARY_OP_GREATER;
+        case BIT_TOKEN_GREATER_EQUAL:
+            return BIT_BINARY_OP_GREATER_EQUAL;
         default:
             return BIT_BINARY_OP_ADD;
     }
@@ -208,6 +220,14 @@ static BitBinaryOpKind bit_token_binary_op(BitTokenKind kind) {
 
 static int bit_parser_binary_precedence(BitTokenKind kind) {
     switch (kind) {
+        case BIT_TOKEN_EQUAL_EQUAL:
+        case BIT_TOKEN_BANG_EQUAL:
+            return 5;
+        case BIT_TOKEN_LESS:
+        case BIT_TOKEN_LESS_EQUAL:
+        case BIT_TOKEN_GREATER:
+        case BIT_TOKEN_GREATER_EQUAL:
+            return 7;
         case BIT_TOKEN_PLUS:
         case BIT_TOKEN_MINUS:
             return 10;
@@ -220,15 +240,31 @@ static int bit_parser_binary_precedence(BitTokenKind kind) {
 }
 
 static int bit_parse_type_ref(BitParser *parser, BitTypeRef *type_out) {
-    const BitToken *token = bit_parser_expect(parser, BIT_TOKEN_KW_I32, "expected type");
+    const BitToken *token = bit_parser_current(parser);
 
-    if (!token) {
+    if (token->kind == BIT_TOKEN_INVALID) {
+        bit_parser_set_error(parser, "invalid token", token, NULL, 0);
         return 0;
     }
 
-    type_out->kind = BIT_TYPE_I32;
-    type_out->span = bit_span_from_token(token);
-    return 1;
+    switch (token->kind) {
+        case BIT_TOKEN_KW_I32:
+            bit_parser_advance(parser);
+            type_out->kind = BIT_TYPE_I32;
+            type_out->span = bit_span_from_token(token);
+            return 1;
+        case BIT_TOKEN_KW_BOOL:
+            bit_parser_advance(parser);
+            type_out->kind = BIT_TYPE_BOOL;
+            type_out->span = bit_span_from_token(token);
+            return 1;
+        default: {
+            BitTokenKind expected[2] = {BIT_TOKEN_KW_I32, BIT_TOKEN_KW_BOOL};
+
+            bit_parser_set_error(parser, "expected type", token, expected, 2);
+            return 0;
+        }
+    }
 }
 
 static BitExpr *bit_make_integer_expr(BitParser *parser, const BitToken *token, uint64_t value) {
@@ -243,6 +279,21 @@ static BitExpr *bit_make_integer_expr(BitParser *parser, const BitToken *token, 
     expr->span = bit_span_from_token(token);
     expr->as.integer.value = value;
     expr->as.integer.span = expr->span;
+    return expr;
+}
+
+static BitExpr *bit_make_bool_expr(BitParser *parser, const BitToken *token, int value) {
+    BitExpr *expr = (BitExpr *)bit_parser_alloc(parser, sizeof(BitExpr));
+
+    if (!expr) {
+        bit_parser_set_error(parser, "out of memory", token, NULL, 0);
+        return NULL;
+    }
+
+    expr->kind = BIT_EXPR_BOOL;
+    expr->span = bit_span_from_token(token);
+    expr->as.boolean.value = value;
+    expr->as.boolean.span = expr->span;
     return expr;
 }
 
@@ -320,6 +371,7 @@ static BitExpr *bit_make_binary_expr(BitParser *parser, BitBinaryOpKind op, BitE
 }
 
 static BitExpr *bit_parse_expr(BitParser *parser);
+static int bit_parse_block(BitParser *parser, BitBlock *block_out);
 
 static BitExpr *bit_parse_integer_expr(BitParser *parser) {
     const BitToken *token = bit_parser_expect(parser, BIT_TOKEN_INTEGER, "expected integer literal");
@@ -334,6 +386,18 @@ static BitExpr *bit_parse_integer_expr(BitParser *parser) {
     }
 
     return bit_make_integer_expr(parser, token, value);
+}
+
+static BitExpr *bit_parse_bool_expr(BitParser *parser) {
+    const BitToken *token = bit_parser_current(parser);
+
+    if (token->kind != BIT_TOKEN_KW_TRUE && token->kind != BIT_TOKEN_KW_FALSE) {
+        bit_parser_set_error(parser, "expected boolean literal", token, NULL, 0);
+        return NULL;
+    }
+
+    bit_parser_advance(parser);
+    return bit_make_bool_expr(parser, token, token->kind == BIT_TOKEN_KW_TRUE);
 }
 
 static int bit_parse_call_args(BitParser *parser, BitExpr ***args_out, size_t *arg_count_out, const BitToken **right_paren_out) {
@@ -445,12 +509,21 @@ static BitExpr *bit_parse_paren_expr(BitParser *parser) {
 }
 
 static BitExpr *bit_parse_primary_expr(BitParser *parser) {
-    BitTokenKind expected[3] = {BIT_TOKEN_LPAREN, BIT_TOKEN_IDENTIFIER, BIT_TOKEN_INTEGER};
+    BitTokenKind expected[5] = {
+        BIT_TOKEN_LPAREN,
+        BIT_TOKEN_IDENTIFIER,
+        BIT_TOKEN_INTEGER,
+        BIT_TOKEN_KW_TRUE,
+        BIT_TOKEN_KW_FALSE
+    };
     const BitToken *current = bit_parser_current(parser);
 
     switch (current->kind) {
         case BIT_TOKEN_INTEGER:
             return bit_parse_integer_expr(parser);
+        case BIT_TOKEN_KW_TRUE:
+        case BIT_TOKEN_KW_FALSE:
+            return bit_parse_bool_expr(parser);
         case BIT_TOKEN_IDENTIFIER:
             return bit_parse_identifier_or_call_expr(parser);
         case BIT_TOKEN_LPAREN:
@@ -459,7 +532,7 @@ static BitExpr *bit_parse_primary_expr(BitParser *parser) {
             bit_parser_set_error(parser, "invalid token", current, NULL, 0);
             return NULL;
         default:
-            bit_parser_set_error(parser, "expected expression", current, expected, 3);
+            bit_parser_set_error(parser, "expected expression", current, expected, 5);
             return NULL;
     }
 }
@@ -617,11 +690,58 @@ static BitStmt *bit_parse_return_stmt(BitParser *parser) {
     return stmt;
 }
 
+static BitStmt *bit_parse_if_stmt(BitParser *parser) {
+    BitStmt *stmt;
+    BitExpr *condition;
+    BitBlock then_block;
+    BitBlock else_block;
+    const BitToken *if_token = bit_parser_expect(parser, BIT_TOKEN_KW_IF, "expected 'if'");
+    const BitToken *else_token;
+
+    if (!if_token) {
+        return NULL;
+    }
+
+    condition = bit_parse_expr(parser);
+    if (!condition) {
+        return NULL;
+    }
+
+    if (!bit_parse_block(parser, &then_block)) {
+        return NULL;
+    }
+
+    else_token = bit_parser_expect(parser, BIT_TOKEN_KW_ELSE, "expected 'else'");
+    if (!else_token) {
+        return NULL;
+    }
+
+    if (!bit_parse_block(parser, &else_block)) {
+        return NULL;
+    }
+
+    stmt = (BitStmt *)bit_parser_alloc(parser, sizeof(BitStmt));
+    if (!stmt) {
+        bit_parser_set_error(parser, "out of memory", if_token, NULL, 0);
+        return NULL;
+    }
+
+    stmt->kind = BIT_STMT_IF;
+    stmt->span = bit_span_from_range(if_token, bit_parser_previous(parser));
+    stmt->as.if_stmt.condition = condition;
+    stmt->as.if_stmt.then_block = then_block;
+    stmt->as.if_stmt.else_block = else_block;
+    stmt->as.if_stmt.span = stmt->span;
+    return stmt;
+}
+
 static BitStmt *bit_parse_stmt(BitParser *parser) {
-    BitTokenKind expected[2] = {BIT_TOKEN_KW_LET, BIT_TOKEN_KW_RETURN};
+    BitTokenKind expected[3] = {BIT_TOKEN_KW_IF, BIT_TOKEN_KW_LET, BIT_TOKEN_KW_RETURN};
     const BitToken *current = bit_parser_current(parser);
 
     switch (current->kind) {
+        case BIT_TOKEN_KW_IF:
+            return bit_parse_if_stmt(parser);
         case BIT_TOKEN_KW_LET:
             return bit_parse_let_stmt(parser);
         case BIT_TOKEN_KW_RETURN:
@@ -630,7 +750,7 @@ static BitStmt *bit_parse_stmt(BitParser *parser) {
             bit_parser_set_error(parser, "invalid token", current, NULL, 0);
             return NULL;
         default:
-            bit_parser_set_error(parser, "expected statement", current, expected, 2);
+            bit_parser_set_error(parser, "expected statement", current, expected, 3);
             return NULL;
     }
 }

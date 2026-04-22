@@ -10,12 +10,22 @@ const char *bit_token_kind_name(BitTokenKind kind) {
             return "INTEGER";
         case BIT_TOKEN_KW_FN:
             return "KW_FN";
+        case BIT_TOKEN_KW_IF:
+            return "KW_IF";
+        case BIT_TOKEN_KW_ELSE:
+            return "KW_ELSE";
         case BIT_TOKEN_KW_LET:
             return "KW_LET";
         case BIT_TOKEN_KW_RETURN:
             return "KW_RETURN";
         case BIT_TOKEN_KW_I32:
             return "KW_I32";
+        case BIT_TOKEN_KW_BOOL:
+            return "KW_BOOL";
+        case BIT_TOKEN_KW_TRUE:
+            return "KW_TRUE";
+        case BIT_TOKEN_KW_FALSE:
+            return "KW_FALSE";
         case BIT_TOKEN_LPAREN:
             return "LPAREN";
         case BIT_TOKEN_RPAREN:
@@ -40,6 +50,18 @@ const char *bit_token_kind_name(BitTokenKind kind) {
             return "STAR";
         case BIT_TOKEN_SLASH:
             return "SLASH";
+        case BIT_TOKEN_EQUAL_EQUAL:
+            return "EQUAL_EQUAL";
+        case BIT_TOKEN_BANG_EQUAL:
+            return "BANG_EQUAL";
+        case BIT_TOKEN_LESS:
+            return "LESS";
+        case BIT_TOKEN_LESS_EQUAL:
+            return "LESS_EQUAL";
+        case BIT_TOKEN_GREATER:
+            return "GREATER";
+        case BIT_TOKEN_GREATER_EQUAL:
+            return "GREATER_EQUAL";
         case BIT_TOKEN_SEMICOLON:
             return "SEMICOLON";
         case BIT_TOKEN_INVALID:

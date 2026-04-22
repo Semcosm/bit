@@ -1,0 +1,9 @@
+fn main() -> i32 {
+    let value: i32 = 1;
+    if value < 2 {
+        let yes: bool = true;
+    } else {
+        let no: bool = false;
+    }
+    return 0;
+}

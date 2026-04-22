@@ -25,6 +25,7 @@ typedef struct BitIrgenContext {
     LLVMBuilderRef builder;
 
     LLVMTypeRef i32_type;
+    LLVMTypeRef bool_type;
 
     BitIrgenDiagnostic diagnostic;
     BitIrgenFunction *functions;
@@ -98,6 +99,7 @@ static int bit_irgen_init(BitIrgenContext *ctx, const BitIrgenOptions *options) 
     }
 
     ctx->i32_type = LLVMInt32TypeInContext(ctx->llctx);
+    ctx->bool_type = LLVMInt1TypeInContext(ctx->llctx);
     ctx->functions = NULL;
     ctx->function_count = 0;
     ctx->function_capacity = 0;
@@ -151,6 +153,8 @@ static LLVMTypeRef bit_lower_type(BitIrgenContext *ctx, const BitTypeRef *type) 
     switch (type->kind) {
         case BIT_TYPE_I32:
             return ctx->i32_type;
+        case BIT_TYPE_BOOL:
+            return ctx->bool_type;
     }
 
     bit_irgen_fail(ctx, "unsupported type", type->span);
@@ -277,10 +281,14 @@ static int bit_irgen_bind_local(BitIrgenContext *ctx, BitStringView name, LLVMTy
     return 1;
 }
 
+static int bit_lower_block(BitIrgenContext *ctx, const BitBlock *block);
+
 static LLVMValueRef bit_lower_expr(BitIrgenContext *ctx, const BitExpr *expr) {
     switch (expr->kind) {
         case BIT_EXPR_INTEGER:
             return LLVMConstInt(ctx->i32_type, expr->as.integer.value, 0);
+        case BIT_EXPR_BOOL:
+            return LLVMConstInt(ctx->bool_type, expr->as.boolean.value != 0, 0);
         case BIT_EXPR_IDENTIFIER: {
             const BitIrgenLocal *local = bit_irgen_find_local(ctx, expr->as.name.name);
 
@@ -378,6 +386,18 @@ static LLVMValueRef bit_lower_expr(BitIrgenContext *ctx, const BitExpr *expr) {
                     return LLVMBuildMul(ctx->builder, left, right, "");
                 case BIT_BINARY_OP_DIV:
                     return LLVMBuildSDiv(ctx->builder, left, right, "");
+                case BIT_BINARY_OP_EQUAL:
+                    return LLVMBuildICmp(ctx->builder, LLVMIntEQ, left, right, "");
+                case BIT_BINARY_OP_NOT_EQUAL:
+                    return LLVMBuildICmp(ctx->builder, LLVMIntNE, left, right, "");
+                case BIT_BINARY_OP_LESS:
+                    return LLVMBuildICmp(ctx->builder, LLVMIntSLT, left, right, "");
+                case BIT_BINARY_OP_LESS_EQUAL:
+                    return LLVMBuildICmp(ctx->builder, LLVMIntSLE, left, right, "");
+                case BIT_BINARY_OP_GREATER:
+                    return LLVMBuildICmp(ctx->builder, LLVMIntSGT, left, right, "");
+                case BIT_BINARY_OP_GREATER_EQUAL:
+                    return LLVMBuildICmp(ctx->builder, LLVMIntSGE, left, right, "");
             }
         }
     }
@@ -387,6 +407,12 @@ static LLVMValueRef bit_lower_expr(BitIrgenContext *ctx, const BitExpr *expr) {
 }
 
 static int bit_lower_stmt(BitIrgenContext *ctx, const BitStmt *stmt) {
+    LLVMBasicBlockRef current_block = LLVMGetInsertBlock(ctx->builder);
+
+    if (current_block && LLVMGetBasicBlockTerminator(current_block)) {
+        return bit_irgen_fail(ctx, "statement is unreachable", stmt->span);
+    }
+
     switch (stmt->kind) {
         case BIT_STMT_LET: {
             LLVMTypeRef type;
@@ -430,6 +456,63 @@ static int bit_lower_stmt(BitIrgenContext *ctx, const BitStmt *stmt) {
             LLVMBuildRet(ctx->builder, value);
             return 1;
         }
+        case BIT_STMT_IF: {
+            LLVMValueRef condition;
+            LLVMValueRef function;
+            LLVMBasicBlockRef then_block;
+            LLVMBasicBlockRef else_block;
+            LLVMBasicBlockRef merge_block;
+            LLVMBasicBlockRef then_end;
+            LLVMBasicBlockRef else_end;
+            int needs_merge = 0;
+
+            if (!stmt->as.if_stmt.condition) {
+                return bit_irgen_fail(ctx, "if statement requires a condition", stmt->span);
+            }
+
+            condition = bit_lower_expr(ctx, stmt->as.if_stmt.condition);
+            if (!condition) {
+                return 0;
+            }
+
+            function = LLVMGetBasicBlockParent(LLVMGetInsertBlock(ctx->builder));
+            then_block = LLVMAppendBasicBlockInContext(ctx->llctx, function, "if.then");
+            else_block = LLVMAppendBasicBlockInContext(ctx->llctx, function, "if.else");
+            merge_block = LLVMAppendBasicBlockInContext(ctx->llctx, function, "if.end");
+
+            LLVMBuildCondBr(ctx->builder, condition, then_block, else_block);
+
+            LLVMPositionBuilderAtEnd(ctx->builder, then_block);
+            if (!bit_lower_block(ctx, &stmt->as.if_stmt.then_block)) {
+                return 0;
+            }
+
+            then_end = LLVMGetInsertBlock(ctx->builder);
+            if (!LLVMGetBasicBlockTerminator(then_end)) {
+                LLVMBuildBr(ctx->builder, merge_block);
+                needs_merge = 1;
+            }
+
+            LLVMPositionBuilderAtEnd(ctx->builder, else_block);
+            if (!bit_lower_block(ctx, &stmt->as.if_stmt.else_block)) {
+                return 0;
+            }
+
+            else_end = LLVMGetInsertBlock(ctx->builder);
+            if (!LLVMGetBasicBlockTerminator(else_end)) {
+                LLVMBuildBr(ctx->builder, merge_block);
+                needs_merge = 1;
+            }
+
+            if (needs_merge) {
+                LLVMPositionBuilderAtEnd(ctx->builder, merge_block);
+            } else {
+                LLVMDeleteBasicBlock(merge_block);
+                LLVMPositionBuilderAtEnd(ctx->builder, else_end);
+            }
+
+            return 1;
+        }
     }
 
     return bit_irgen_fail(ctx, "unsupported statement", stmt->span);
@@ -437,13 +520,16 @@ static int bit_lower_stmt(BitIrgenContext *ctx, const BitStmt *stmt) {
 
 static int bit_lower_block(BitIrgenContext *ctx, const BitBlock *block) {
     size_t i;
+    size_t saved_local_count = ctx->local_count;
 
     for (i = 0; i < block->stmt_count; ++i) {
         if (!bit_lower_stmt(ctx, block->stmts[i])) {
+            ctx->local_count = saved_local_count;
             return 0;
         }
     }
 
+    ctx->local_count = saved_local_count;
     return 1;
 }
 
@@ -590,8 +676,12 @@ BitIrgenResult bit_emit_llvm_ir_file(
     ctx.llmod = NULL;
     ctx.builder = NULL;
     ctx.i32_type = NULL;
+    ctx.bool_type = NULL;
     ctx.diagnostic.message = NULL;
     ctx.diagnostic.span = bit_empty_span();
+    ctx.functions = NULL;
+    ctx.function_count = 0;
+    ctx.function_capacity = 0;
     ctx.locals = NULL;
     ctx.local_count = 0;
     ctx.local_capacity = 0;

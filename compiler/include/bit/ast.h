@@ -19,6 +19,7 @@ typedef struct BitStringView {
 
 typedef enum BitTypeKind {
     BIT_TYPE_I32 = 0,
+    BIT_TYPE_BOOL,
 } BitTypeKind;
 
 typedef struct BitTypeRef {
@@ -31,6 +32,12 @@ typedef enum BitBinaryOpKind {
     BIT_BINARY_OP_SUB,
     BIT_BINARY_OP_MUL,
     BIT_BINARY_OP_DIV,
+    BIT_BINARY_OP_EQUAL,
+    BIT_BINARY_OP_NOT_EQUAL,
+    BIT_BINARY_OP_LESS,
+    BIT_BINARY_OP_LESS_EQUAL,
+    BIT_BINARY_OP_GREATER,
+    BIT_BINARY_OP_GREATER_EQUAL,
 } BitBinaryOpKind;
 
 typedef enum BitUnaryOpKind {
@@ -39,6 +46,7 @@ typedef enum BitUnaryOpKind {
 
 typedef enum BitExprKind {
     BIT_EXPR_INTEGER = 0,
+    BIT_EXPR_BOOL,
     BIT_EXPR_IDENTIFIER,
     BIT_EXPR_CALL,
     BIT_EXPR_UNARY,
@@ -50,6 +58,11 @@ typedef struct BitIntegerExpr {
     BitSourceSpan span;
 } BitIntegerExpr;
 
+typedef struct BitBoolExpr {
+    int value;
+    BitSourceSpan span;
+} BitBoolExpr;
+
 typedef struct BitNameExpr {
     BitStringView name;
     BitSourceSpan span;
@@ -57,6 +70,7 @@ typedef struct BitNameExpr {
 
 typedef struct BitExpr BitExpr;
 typedef struct BitStmt BitStmt;
+typedef struct BitBlock BitBlock;
 
 typedef struct BitCallExpr {
     BitStringView callee;
@@ -83,6 +97,7 @@ struct BitExpr {
     BitSourceSpan span;
     union {
         BitIntegerExpr integer;
+        BitBoolExpr boolean;
         BitNameExpr name;
         BitCallExpr call;
         BitUnaryExpr unary;
@@ -93,7 +108,14 @@ struct BitExpr {
 typedef enum BitStmtKind {
     BIT_STMT_LET = 0,
     BIT_STMT_RETURN,
+    BIT_STMT_IF,
 } BitStmtKind;
+
+struct BitBlock {
+    BitStmt **stmts;
+    size_t stmt_count;
+    BitSourceSpan span;
+};
 
 typedef struct BitLetStmt {
     BitStringView name;
@@ -107,20 +129,22 @@ typedef struct BitReturnStmt {
     BitSourceSpan span;
 } BitReturnStmt;
 
+typedef struct BitIfStmt {
+    BitExpr *condition;
+    struct BitBlock then_block;
+    struct BitBlock else_block;
+    BitSourceSpan span;
+} BitIfStmt;
+
 struct BitStmt {
     BitStmtKind kind;
     BitSourceSpan span;
     union {
         BitLetStmt let;
         BitReturnStmt ret;
+        BitIfStmt if_stmt;
     } as;
 };
-
-typedef struct BitBlock {
-    BitStmt **stmts;
-    size_t stmt_count;
-    BitSourceSpan span;
-} BitBlock;
 
 typedef struct BitParamDecl {
     BitStringView name;

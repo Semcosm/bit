@@ -1,0 +1,15 @@
+fn is_small(value: i32) -> bool {
+    if value < 10 {
+        return true;
+    } else {
+        return false;
+    }
+}
+
+fn main() -> i32 {
+    if is_small(3) {
+        return 1;
+    } else {
+        return 0;
+    }
+}

@@ -203,6 +203,14 @@ if(BUILD_TESTING)
     )
 
     bit_add_golden_test(
+        lexer_control_flow_tokens
+        test_lexer
+        ARGS compiler/tests/fixtures/lexer/control_flow_tokens.bit
+        EXPECT_STDOUT compiler/tests/golden/lexer/control_flow_tokens.stdout
+        LABELS lexer
+    )
+
+    bit_add_golden_test(
         parser_arithmetic_precedence
         test_parser
         ARGS compiler/tests/fixtures/parser/arithmetic_precedence.bit
@@ -223,6 +231,14 @@ if(BUILD_TESTING)
         test_parser
         ARGS compiler/tests/fixtures/parser/function_call.bit
         EXPECT_STDOUT compiler/tests/golden/parser/function_call.stdout
+        LABELS parser
+    )
+
+    bit_add_golden_test(
+        parser_if_else_bool
+        test_parser
+        ARGS compiler/tests/fixtures/parser/if_else_bool.bit
+        EXPECT_STDOUT compiler/tests/golden/parser/if_else_bool.stdout
         LABELS parser
     )
 
@@ -288,6 +304,24 @@ if(BUILD_TESTING)
     )
 
     bit_add_golden_test(
+        sema_condition_type_error
+        test_sema
+        ARGS compiler/tests/fixtures/sema/condition_type_error.bit
+        EXPECT_STDERR compiler/tests/golden/sema/condition_type_error.stderr
+        EXPECT_EXIT_CODE 1
+        LABELS sema
+    )
+
+    bit_add_golden_test(
+        sema_missing_return_path
+        test_sema
+        ARGS compiler/tests/fixtures/sema/missing_return_path.bit
+        EXPECT_STDERR compiler/tests/golden/sema/missing_return_path.stderr
+        EXPECT_EXIT_CODE 1
+        LABELS sema
+    )
+
+    bit_add_golden_test(
         irgen_arithmetic_precedence
         test_irgen
         ARGS
@@ -320,6 +354,18 @@ if(BUILD_TESTING)
         EXPECT_STDOUT compiler/tests/golden/irgen/function_call.stdout
         EXPECT_OUTPUT_FILE compiler/tests/golden/irgen/function_call.ll
         ACTUAL_OUTPUT_FILE ${BIT_TEST_ARTIFACT_DIR}/irgen_function_call.ll
+        LABELS irgen
+    )
+
+    bit_add_golden_test(
+        irgen_if_else_compare
+        test_irgen
+        ARGS
+            compiler/tests/fixtures/irgen/if_else_compare.bit
+            ${BIT_TEST_ARTIFACT_DIR}/irgen_if_else_compare.ll
+        EXPECT_STDOUT compiler/tests/golden/irgen/if_else_compare.stdout
+        EXPECT_OUTPUT_FILE compiler/tests/golden/irgen/if_else_compare.ll
+        ACTUAL_OUTPUT_FILE ${BIT_TEST_ARTIFACT_DIR}/irgen_if_else_compare.ll
         LABELS irgen
     )
 

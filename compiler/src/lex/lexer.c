@@ -64,16 +64,53 @@ static BitToken bit_make_token(const BitLexer *lexer, BitTokenKind kind, size_t 
 }
 
 static BitTokenKind bit_identifier_kind(const char *start, size_t length) {
+    if (length == 2 && start[0] == 'i' && start[1] == 'f') {
+        return BIT_TOKEN_KW_IF;
+    }
+
     if (length == 2 && start[0] == 'f' && start[1] == 'n') {
         return BIT_TOKEN_KW_FN;
+    }
+
+    if (length == 4 &&
+        start[0] == 'e' &&
+        start[1] == 'l' &&
+        start[2] == 's' &&
+        start[3] == 'e') {
+        return BIT_TOKEN_KW_ELSE;
     }
 
     if (length == 3 && start[0] == 'i' && start[1] == '3' && start[2] == '2') {
         return BIT_TOKEN_KW_I32;
     }
 
+    if (length == 4 &&
+        start[0] == 'b' &&
+        start[1] == 'o' &&
+        start[2] == 'o' &&
+        start[3] == 'l') {
+        return BIT_TOKEN_KW_BOOL;
+    }
+
     if (length == 3 && start[0] == 'l' && start[1] == 'e' && start[2] == 't') {
         return BIT_TOKEN_KW_LET;
+    }
+
+    if (length == 4 &&
+        start[0] == 't' &&
+        start[1] == 'r' &&
+        start[2] == 'u' &&
+        start[3] == 'e') {
+        return BIT_TOKEN_KW_TRUE;
+    }
+
+    if (length == 5 &&
+        start[0] == 'f' &&
+        start[1] == 'a' &&
+        start[2] == 'l' &&
+        start[3] == 's' &&
+        start[4] == 'e') {
+        return BIT_TOKEN_KW_FALSE;
     }
 
     if (length == 6 &&
@@ -159,7 +196,17 @@ BitToken bit_lexer_next(BitLexer *lexer) {
         case ':':
             return bit_make_token(lexer, BIT_TOKEN_COLON, start, line, column);
         case '=':
+            if (bit_lexer_peek(lexer) == '=') {
+                bit_lexer_advance(lexer);
+                return bit_make_token(lexer, BIT_TOKEN_EQUAL_EQUAL, start, line, column);
+            }
             return bit_make_token(lexer, BIT_TOKEN_EQUAL, start, line, column);
+        case '!':
+            if (bit_lexer_peek(lexer) == '=') {
+                bit_lexer_advance(lexer);
+                return bit_make_token(lexer, BIT_TOKEN_BANG_EQUAL, start, line, column);
+            }
+            break;
         case '+':
             return bit_make_token(lexer, BIT_TOKEN_PLUS, start, line, column);
         case '-':
@@ -172,6 +219,18 @@ BitToken bit_lexer_next(BitLexer *lexer) {
             return bit_make_token(lexer, BIT_TOKEN_STAR, start, line, column);
         case '/':
             return bit_make_token(lexer, BIT_TOKEN_SLASH, start, line, column);
+        case '<':
+            if (bit_lexer_peek(lexer) == '=') {
+                bit_lexer_advance(lexer);
+                return bit_make_token(lexer, BIT_TOKEN_LESS_EQUAL, start, line, column);
+            }
+            return bit_make_token(lexer, BIT_TOKEN_LESS, start, line, column);
+        case '>':
+            if (bit_lexer_peek(lexer) == '=') {
+                bit_lexer_advance(lexer);
+                return bit_make_token(lexer, BIT_TOKEN_GREATER_EQUAL, start, line, column);
+            }
+            return bit_make_token(lexer, BIT_TOKEN_GREATER, start, line, column);
         case ';':
             return bit_make_token(lexer, BIT_TOKEN_SEMICOLON, start, line, column);
     }
