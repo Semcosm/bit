@@ -219,6 +219,14 @@ if(BUILD_TESTING)
     )
 
     bit_add_golden_test(
+        parser_function_call
+        test_parser
+        ARGS compiler/tests/fixtures/parser/function_call.bit
+        EXPECT_STDOUT compiler/tests/golden/parser/function_call.stdout
+        LABELS parser
+    )
+
+    bit_add_golden_test(
         parser_missing_semicolon
         test_parser
         ARGS compiler/tests/fixtures/parser/missing_semicolon.bit
@@ -262,6 +270,24 @@ if(BUILD_TESTING)
     )
 
     bit_add_golden_test(
+        sema_call_arity_error
+        test_sema
+        ARGS compiler/tests/fixtures/sema/call_arity_error.bit
+        EXPECT_STDERR compiler/tests/golden/sema/call_arity_error.stderr
+        EXPECT_EXIT_CODE 1
+        LABELS sema
+    )
+
+    bit_add_golden_test(
+        sema_unknown_function
+        test_sema
+        ARGS compiler/tests/fixtures/sema/unknown_function.bit
+        EXPECT_STDERR compiler/tests/golden/sema/unknown_function.stderr
+        EXPECT_EXIT_CODE 1
+        LABELS sema
+    )
+
+    bit_add_golden_test(
         irgen_arithmetic_precedence
         test_irgen
         ARGS
@@ -282,6 +308,18 @@ if(BUILD_TESTING)
         EXPECT_STDOUT compiler/tests/golden/irgen/unary_negation.stdout
         EXPECT_OUTPUT_FILE compiler/tests/golden/irgen/unary_negation.ll
         ACTUAL_OUTPUT_FILE ${BIT_TEST_ARTIFACT_DIR}/irgen_unary_negation.ll
+        LABELS irgen
+    )
+
+    bit_add_golden_test(
+        irgen_function_call
+        test_irgen
+        ARGS
+            compiler/tests/fixtures/irgen/function_call.bit
+            ${BIT_TEST_ARTIFACT_DIR}/irgen_function_call.ll
+        EXPECT_STDOUT compiler/tests/golden/irgen/function_call.stdout
+        EXPECT_OUTPUT_FILE compiler/tests/golden/irgen/function_call.ll
+        ACTUAL_OUTPUT_FILE ${BIT_TEST_ARTIFACT_DIR}/irgen_function_call.ll
         LABELS irgen
     )
 

@@ -1,5 +1,6 @@
 (module
   (fn name="main" ret=i32
+    (params)
     (block
       (let name="value" type=i32
         (binary op="+"

@@ -4,17 +4,26 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef struct BitSemaSymbol {
+typedef struct BitSemaLocalSymbol {
     BitStringView name;
     BitTypeKind type;
     BitSourceSpan span;
-} BitSemaSymbol;
+} BitSemaLocalSymbol;
+
+typedef struct BitSemaFunctionSymbol {
+    BitStringView name;
+    const BitFunctionDecl *decl;
+    BitSourceSpan span;
+} BitSemaFunctionSymbol;
 
 typedef struct BitSemaContext {
     BitSemaDiagnostic diagnostic;
-    BitSemaSymbol *symbols;
-    size_t symbol_count;
-    size_t symbol_capacity;
+    BitSemaFunctionSymbol *functions;
+    size_t function_count;
+    size_t function_capacity;
+    BitSemaLocalSymbol *locals;
+    size_t local_count;
+    size_t local_capacity;
     BitTypeKind current_return_type;
 } BitSemaContext;
 
@@ -43,21 +52,24 @@ static int bit_sema_fail(BitSemaContext *ctx, const char *message, BitSourceSpan
     return 0;
 }
 
-static int bit_string_view_equals(BitStringView value, const char *text) {
+static int bit_string_view_equals(BitStringView left, BitStringView right) {
+    return left.length == right.length && strncmp(left.data, right.data, left.length) == 0;
+}
+
+static int bit_string_view_equals_text(BitStringView value, const char *text) {
     size_t text_length = strlen(text);
 
     return value.length == text_length && strncmp(value.data, text, value.length) == 0;
 }
 
-static const BitSemaSymbol *bit_sema_find_symbol(const BitSemaContext *ctx, BitStringView name) {
-    size_t i = ctx->symbol_count;
+static const BitSemaLocalSymbol *bit_sema_find_local(const BitSemaContext *ctx, BitStringView name) {
+    size_t i = ctx->local_count;
 
     while (i > 0) {
-        const BitSemaSymbol *symbol = &ctx->symbols[i - 1];
+        const BitSemaLocalSymbol *local = &ctx->locals[i - 1];
 
-        if (symbol->name.length == name.length &&
-            strncmp(symbol->name.data, name.data, name.length) == 0) {
-            return symbol;
+        if (bit_string_view_equals(local->name, name)) {
+            return local;
         }
 
         --i;
@@ -66,29 +78,70 @@ static const BitSemaSymbol *bit_sema_find_symbol(const BitSemaContext *ctx, BitS
     return NULL;
 }
 
-static int bit_sema_bind_symbol(BitSemaContext *ctx, BitStringView name, BitTypeKind type, BitSourceSpan span) {
-    BitSemaSymbol *new_symbols;
+static const BitSemaFunctionSymbol *bit_sema_find_function(const BitSemaContext *ctx, BitStringView name) {
+    size_t i;
 
-    if (bit_sema_find_symbol(ctx, name)) {
+    for (i = 0; i < ctx->function_count; ++i) {
+        if (bit_string_view_equals(ctx->functions[i].name, name)) {
+            return &ctx->functions[i];
+        }
+    }
+
+    return NULL;
+}
+
+static int bit_sema_bind_local(BitSemaContext *ctx, BitStringView name, BitTypeKind type, BitSourceSpan span) {
+    BitSemaLocalSymbol *new_locals;
+
+    if (bit_sema_find_local(ctx, name)) {
         return bit_sema_fail(ctx, "duplicate local binding", span);
     }
 
-    if (ctx->symbol_count == ctx->symbol_capacity) {
-        size_t new_capacity = ctx->symbol_capacity == 0 ? 8 : ctx->symbol_capacity * 2;
+    if (ctx->local_count == ctx->local_capacity) {
+        size_t new_capacity = ctx->local_capacity == 0 ? 8 : ctx->local_capacity * 2;
 
-        new_symbols = (BitSemaSymbol *)realloc(ctx->symbols, new_capacity * sizeof(BitSemaSymbol));
-        if (!new_symbols) {
+        new_locals = (BitSemaLocalSymbol *)realloc(ctx->locals, new_capacity * sizeof(BitSemaLocalSymbol));
+        if (!new_locals) {
             return bit_sema_fail(ctx, "out of memory", span);
         }
 
-        ctx->symbols = new_symbols;
-        ctx->symbol_capacity = new_capacity;
+        ctx->locals = new_locals;
+        ctx->local_capacity = new_capacity;
     }
 
-    ctx->symbols[ctx->symbol_count].name = name;
-    ctx->symbols[ctx->symbol_count].type = type;
-    ctx->symbols[ctx->symbol_count].span = span;
-    ctx->symbol_count += 1;
+    ctx->locals[ctx->local_count].name = name;
+    ctx->locals[ctx->local_count].type = type;
+    ctx->locals[ctx->local_count].span = span;
+    ctx->local_count += 1;
+    return 1;
+}
+
+static int bit_sema_bind_function(BitSemaContext *ctx, const BitFunctionDecl *function) {
+    BitSemaFunctionSymbol *new_functions;
+
+    if (bit_sema_find_function(ctx, function->name)) {
+        return bit_sema_fail(ctx, "duplicate function declaration", function->span);
+    }
+
+    if (ctx->function_count == ctx->function_capacity) {
+        size_t new_capacity = ctx->function_capacity == 0 ? 8 : ctx->function_capacity * 2;
+
+        new_functions = (BitSemaFunctionSymbol *)realloc(
+            ctx->functions,
+            new_capacity * sizeof(BitSemaFunctionSymbol)
+        );
+        if (!new_functions) {
+            return bit_sema_fail(ctx, "out of memory", function->span);
+        }
+
+        ctx->functions = new_functions;
+        ctx->function_capacity = new_capacity;
+    }
+
+    ctx->functions[ctx->function_count].name = function->name;
+    ctx->functions[ctx->function_count].decl = function;
+    ctx->functions[ctx->function_count].span = function->span;
+    ctx->function_count += 1;
     return 1;
 }
 
@@ -106,13 +159,40 @@ static int bit_check_expr(BitSemaContext *ctx, const BitExpr *expr, BitTypeKind 
             *type_out = BIT_TYPE_I32;
             return 1;
         case BIT_EXPR_IDENTIFIER: {
-            const BitSemaSymbol *symbol = bit_sema_find_symbol(ctx, expr->as.name.name);
+            const BitSemaLocalSymbol *local = bit_sema_find_local(ctx, expr->as.name.name);
 
-            if (!symbol) {
+            if (!local) {
                 return bit_sema_fail(ctx, "unknown identifier", expr->span);
             }
 
-            *type_out = symbol->type;
+            *type_out = local->type;
+            return 1;
+        }
+        case BIT_EXPR_CALL: {
+            const BitSemaFunctionSymbol *function = bit_sema_find_function(ctx, expr->as.call.callee);
+            size_t i;
+
+            if (!function) {
+                return bit_sema_fail(ctx, "unknown function", expr->span);
+            }
+
+            if (expr->as.call.arg_count != function->decl->param_count) {
+                return bit_sema_fail(ctx, "function argument count mismatch", expr->span);
+            }
+
+            for (i = 0; i < expr->as.call.arg_count; ++i) {
+                BitTypeKind arg_type;
+
+                if (!bit_check_expr(ctx, expr->as.call.args[i], &arg_type)) {
+                    return 0;
+                }
+
+                if (arg_type != function->decl->params[i].type.kind) {
+                    return bit_sema_fail(ctx, "function argument type mismatch", expr->as.call.args[i]->span);
+                }
+            }
+
+            *type_out = function->decl->return_type.kind;
             return 1;
         }
         case BIT_EXPR_UNARY: {
@@ -193,7 +273,7 @@ static int bit_check_stmt(BitSemaContext *ctx, const BitStmt *stmt) {
                 return bit_sema_fail(ctx, "initializer type does not match local binding type", stmt->span);
             }
 
-            return bit_sema_bind_symbol(
+            return bit_sema_bind_local(
                 ctx,
                 stmt->as.let.name,
                 stmt->as.let.type.kind,
@@ -225,20 +305,34 @@ static int bit_check_function(BitSemaContext *ctx, const BitFunctionDecl *functi
         return bit_sema_fail(ctx, "function is required", bit_empty_span());
     }
 
-    if (!bit_string_view_equals(function->name, "main")) {
-        return bit_sema_fail(ctx, "expected function name 'main'", function->span);
+    if (function->return_type.kind != BIT_TYPE_I32) {
+        return bit_sema_fail(ctx, "functions must return i32", function->return_type.span);
     }
 
-    if (function->return_type.kind != BIT_TYPE_I32) {
-        return bit_sema_fail(ctx, "main must return i32", function->return_type.span);
+    if (bit_string_view_equals_text(function->name, "main") && function->param_count != 0) {
+        return bit_sema_fail(ctx, "main must not take parameters", function->span);
     }
 
     if (function->body.stmt_count == 0) {
         return bit_sema_fail(ctx, "function body must contain statements", function->body.span);
     }
 
-    ctx->symbol_count = 0;
+    ctx->local_count = 0;
     ctx->current_return_type = function->return_type.kind;
+
+    for (i = 0; i < function->param_count; ++i) {
+        if (function->params[i].type.kind != BIT_TYPE_I32) {
+            return bit_sema_fail(ctx, "function parameters must be i32", function->params[i].span);
+        }
+
+        if (!bit_sema_bind_local(
+                ctx,
+                function->params[i].name,
+                function->params[i].type.kind,
+                function->params[i].span)) {
+            return 0;
+        }
+    }
 
     for (i = 0; i < function->body.stmt_count; ++i) {
         if (function->body.stmts[i]->kind == BIT_STMT_RETURN && i + 1 != function->body.stmt_count) {
@@ -257,16 +351,44 @@ static int bit_check_function(BitSemaContext *ctx, const BitFunctionDecl *functi
     return 1;
 }
 
+static int bit_bind_module_functions(BitSemaContext *ctx, const BitModule *module) {
+    size_t i;
+
+    for (i = 0; i < module->function_count; ++i) {
+        if (!bit_sema_bind_function(ctx, module->functions[i])) {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
 static int bit_check_module(BitSemaContext *ctx, const BitModule *module) {
+    size_t i;
+
     if (!module) {
         return bit_sema_fail(ctx, "module is required", bit_empty_span());
     }
 
-    if (module->function_count != 1) {
-        return bit_sema_fail(ctx, "module must contain exactly one function", module->span);
+    if (module->function_count == 0) {
+        return bit_sema_fail(ctx, "module has no functions", module->span);
     }
 
-    return bit_check_function(ctx, module->functions[0]);
+    if (!bit_bind_module_functions(ctx, module)) {
+        return 0;
+    }
+
+    if (!bit_sema_find_function(ctx, (BitStringView){"main", 4})) {
+        return bit_sema_fail(ctx, "module must define function 'main'", module->span);
+    }
+
+    for (i = 0; i < module->function_count; ++i) {
+        if (!bit_check_function(ctx, module->functions[i])) {
+            return 0;
+        }
+    }
+
+    return 1;
 }
 
 BitSemaResult bit_analyze_module(const BitModule *module) {
@@ -275,9 +397,12 @@ BitSemaResult bit_analyze_module(const BitModule *module) {
 
     ctx.diagnostic.message = NULL;
     ctx.diagnostic.span = bit_empty_span();
-    ctx.symbols = NULL;
-    ctx.symbol_count = 0;
-    ctx.symbol_capacity = 0;
+    ctx.functions = NULL;
+    ctx.function_count = 0;
+    ctx.function_capacity = 0;
+    ctx.locals = NULL;
+    ctx.local_count = 0;
+    ctx.local_capacity = 0;
     ctx.current_return_type = BIT_TYPE_I32;
 
     if (!bit_check_module(&ctx, module)) {
@@ -285,14 +410,16 @@ BitSemaResult bit_analyze_module(const BitModule *module) {
             ctx.diagnostic.message ? ctx.diagnostic.message : "semantic analysis failed",
             ctx.diagnostic.span
         );
-        free(ctx.symbols);
+        free(ctx.functions);
+        free(ctx.locals);
         return result;
     }
 
     result.status = BIT_SEMA_OK;
     result.diagnostic.message = NULL;
     result.diagnostic.span = bit_empty_span();
-    free(ctx.symbols);
+    free(ctx.functions);
+    free(ctx.locals);
     return result;
 }
 

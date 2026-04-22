@@ -43,6 +43,17 @@ static const char *bit_unary_op_name(BitUnaryOpKind op) {
     return "?";
 }
 
+static void bit_ast_dump_param(FILE *stream, const BitParamDecl *param, int indent) {
+    bit_ast_print_indent(stream, indent);
+    fprintf(
+        stream,
+        "(param name=\"%.*s\" type=%s)",
+        (int)param->name.length,
+        param->name.data,
+        bit_type_kind_name(param->type.kind)
+    );
+}
+
 static void bit_ast_dump_expr(FILE *stream, const BitExpr *expr, int indent) {
     bit_ast_print_indent(stream, indent);
 
@@ -58,6 +69,31 @@ static void bit_ast_dump_expr(FILE *stream, const BitExpr *expr, int indent) {
                 expr->as.name.name.data
             );
             return;
+        case BIT_EXPR_CALL: {
+            size_t i;
+
+            fprintf(
+                stream,
+                "(call callee=\"%.*s\"",
+                (int)expr->as.call.callee.length,
+                expr->as.call.callee.data
+            );
+
+            if (expr->as.call.arg_count == 0) {
+                fputc(')', stream);
+                return;
+            }
+
+            fputc('\n', stream);
+            for (i = 0; i < expr->as.call.arg_count; ++i) {
+                bit_ast_dump_expr(stream, expr->as.call.args[i], indent + 1);
+                if (i + 1 < expr->as.call.arg_count) {
+                    fputc('\n', stream);
+                }
+            }
+            fputc(')', stream);
+            return;
+        }
         case BIT_EXPR_UNARY:
             fprintf(stream, "(unary op=\"%s\"\n", bit_unary_op_name(expr->as.unary.op));
             bit_ast_dump_expr(stream, expr->as.unary.operand, indent + 1);
@@ -120,6 +156,8 @@ static void bit_ast_dump_block(FILE *stream, const BitBlock *block, int indent) 
 }
 
 static void bit_ast_dump_function(FILE *stream, const BitFunctionDecl *function, int indent) {
+    size_t i;
+
     bit_ast_print_indent(stream, indent);
     fprintf(
         stream,
@@ -128,6 +166,22 @@ static void bit_ast_dump_function(FILE *stream, const BitFunctionDecl *function,
         function->name.data,
         bit_type_kind_name(function->return_type.kind)
     );
+
+    bit_ast_print_indent(stream, indent + 1);
+    fputs("(params", stream);
+    if (function->param_count == 0) {
+        fputs(")\n", stream);
+    } else {
+        fputc('\n', stream);
+        for (i = 0; i < function->param_count; ++i) {
+            bit_ast_dump_param(stream, &function->params[i], indent + 2);
+            if (i + 1 < function->param_count) {
+                fputc('\n', stream);
+            }
+        }
+        fputs(")\n", stream);
+    }
+
     bit_ast_dump_block(stream, &function->body, indent + 1);
     fputc(')', stream);
 }

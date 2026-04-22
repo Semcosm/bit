@@ -1,0 +1,17 @@
+(module
+  (fn name="add" ret=i32
+    (params
+      (param name="lhs" type=i32)
+      (param name="rhs" type=i32))
+    (block
+      (return
+        (binary op="+"
+          (name "lhs")
+          (name "rhs")))))
+  (fn name="main" ret=i32
+    (params)
+    (block
+      (return
+        (call callee="add"
+          (int 1)
+          (int 2))))))

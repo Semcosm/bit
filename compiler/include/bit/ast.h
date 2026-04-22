@@ -40,6 +40,7 @@ typedef enum BitUnaryOpKind {
 typedef enum BitExprKind {
     BIT_EXPR_INTEGER = 0,
     BIT_EXPR_IDENTIFIER,
+    BIT_EXPR_CALL,
     BIT_EXPR_UNARY,
     BIT_EXPR_BINARY,
 } BitExprKind;
@@ -56,6 +57,13 @@ typedef struct BitNameExpr {
 
 typedef struct BitExpr BitExpr;
 typedef struct BitStmt BitStmt;
+
+typedef struct BitCallExpr {
+    BitStringView callee;
+    BitExpr **args;
+    size_t arg_count;
+    BitSourceSpan span;
+} BitCallExpr;
 
 typedef struct BitUnaryExpr {
     BitUnaryOpKind op;
@@ -76,6 +84,7 @@ struct BitExpr {
     union {
         BitIntegerExpr integer;
         BitNameExpr name;
+        BitCallExpr call;
         BitUnaryExpr unary;
         BitBinaryExpr binary;
     } as;
@@ -113,8 +122,16 @@ typedef struct BitBlock {
     BitSourceSpan span;
 } BitBlock;
 
+typedef struct BitParamDecl {
+    BitStringView name;
+    BitTypeRef type;
+    BitSourceSpan span;
+} BitParamDecl;
+
 typedef struct BitFunctionDecl {
     BitStringView name;
+    BitParamDecl *params;
+    size_t param_count;
     BitTypeRef return_type;
     BitBlock body;
     BitSourceSpan span;
