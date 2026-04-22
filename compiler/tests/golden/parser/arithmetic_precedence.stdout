@@ -1,0 +1,13 @@
+(module
+  (fn name="main" ret=i32
+    (block
+      (let name="value" type=i32
+        (binary op="+"
+          (int 1)
+          (binary op="*"
+            (int 2)
+            (int 3))))
+      (return
+        (binary op="-"
+          (name "value")
+          (int 1))))))

@@ -34,6 +34,15 @@ static const char *bit_binary_op_name(BitBinaryOpKind op) {
     return "?";
 }
 
+static const char *bit_unary_op_name(BitUnaryOpKind op) {
+    switch (op) {
+        case BIT_UNARY_OP_NEG:
+            return "-";
+    }
+
+    return "?";
+}
+
 static void bit_ast_dump_expr(FILE *stream, const BitExpr *expr, int indent) {
     bit_ast_print_indent(stream, indent);
 
@@ -48,6 +57,11 @@ static void bit_ast_dump_expr(FILE *stream, const BitExpr *expr, int indent) {
                 (int)expr->as.name.name.length,
                 expr->as.name.name.data
             );
+            return;
+        case BIT_EXPR_UNARY:
+            fprintf(stream, "(unary op=\"%s\"\n", bit_unary_op_name(expr->as.unary.op));
+            bit_ast_dump_expr(stream, expr->as.unary.operand, indent + 1);
+            fputc(')', stream);
             return;
         case BIT_EXPR_BINARY:
             fprintf(stream, "(binary op=\"%s\"\n", bit_binary_op_name(expr->as.binary.op));

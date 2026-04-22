@@ -195,6 +195,27 @@ static LLVMValueRef bit_lower_expr(BitIrgenContext *ctx, const BitExpr *expr) {
 
             return LLVMBuildLoad2(ctx->builder, local->type, local->storage, "");
         }
+        case BIT_EXPR_UNARY: {
+            LLVMValueRef operand;
+
+            if (!expr->as.unary.operand) {
+                bit_irgen_fail(ctx, "unary expression requires an operand", expr->span);
+                return NULL;
+            }
+
+            operand = bit_lower_expr(ctx, expr->as.unary.operand);
+            if (!operand) {
+                return NULL;
+            }
+
+            switch (expr->as.unary.op) {
+                case BIT_UNARY_OP_NEG:
+                    return LLVMBuildNeg(ctx->builder, operand, "");
+            }
+
+            bit_irgen_fail(ctx, "unsupported unary expression", expr->span);
+            return NULL;
+        }
         case BIT_EXPR_BINARY: {
             LLVMValueRef left;
             LLVMValueRef right;

@@ -115,6 +115,35 @@ static int bit_check_expr(BitSemaContext *ctx, const BitExpr *expr, BitTypeKind 
             *type_out = symbol->type;
             return 1;
         }
+        case BIT_EXPR_UNARY: {
+            BitTypeKind operand_type;
+            const BitExpr *operand = expr->as.unary.operand;
+            uint64_t max_negated_i32 = (uint64_t)INT32_MAX + 1ULL;
+
+            if (!operand) {
+                return bit_sema_fail(ctx, "unary expression requires an operand", expr->span);
+            }
+
+            if (expr->as.unary.op == BIT_UNARY_OP_NEG && operand->kind == BIT_EXPR_INTEGER) {
+                if (operand->as.integer.value > max_negated_i32) {
+                    return bit_sema_fail(ctx, "integer literal out of range for i32", operand->span);
+                }
+
+                *type_out = BIT_TYPE_I32;
+                return 1;
+            }
+
+            if (!bit_check_expr(ctx, operand, &operand_type)) {
+                return 0;
+            }
+
+            if (operand_type != BIT_TYPE_I32) {
+                return bit_sema_fail(ctx, "unary operand must be i32", expr->span);
+            }
+
+            *type_out = BIT_TYPE_I32;
+            return 1;
+        }
         case BIT_EXPR_BINARY: {
             BitTypeKind left_type;
             BitTypeKind right_type;

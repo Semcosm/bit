@@ -33,9 +33,14 @@ typedef enum BitBinaryOpKind {
     BIT_BINARY_OP_DIV,
 } BitBinaryOpKind;
 
+typedef enum BitUnaryOpKind {
+    BIT_UNARY_OP_NEG = 0,
+} BitUnaryOpKind;
+
 typedef enum BitExprKind {
     BIT_EXPR_INTEGER = 0,
     BIT_EXPR_IDENTIFIER,
+    BIT_EXPR_UNARY,
     BIT_EXPR_BINARY,
 } BitExprKind;
 
@@ -52,6 +57,12 @@ typedef struct BitNameExpr {
 typedef struct BitExpr BitExpr;
 typedef struct BitStmt BitStmt;
 
+typedef struct BitUnaryExpr {
+    BitUnaryOpKind op;
+    BitExpr *operand;
+    BitSourceSpan span;
+} BitUnaryExpr;
+
 typedef struct BitBinaryExpr {
     BitBinaryOpKind op;
     BitExpr *left;
@@ -65,6 +76,7 @@ struct BitExpr {
     union {
         BitIntegerExpr integer;
         BitNameExpr name;
+        BitUnaryExpr unary;
         BitBinaryExpr binary;
     } as;
 };

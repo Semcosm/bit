@@ -8,12 +8,16 @@
 
 ## Build, Test, and Development Commands
 
-This repository does not yet ship a checked-in build system. Until `CMakeLists.txt` and test runners are added, keep development commands simple and reproducible.
+This repository uses CMake and a CTest-based golden test suite. Keep commands runnable from the repository root.
 
-- `clang file.c $(llvm-config --cflags --ldflags --libs core) -o out`
-  Build a local LLVM C API smoke test or prototype.
-- `./out`
-  Run the compiled test binary locally.
+- `cmake -S . -B build`
+  Configure the project.
+- `cmake --build build`
+  Build the compiler and test tools.
+- `ctest --test-dir build --output-on-failure`
+  Run the golden regression suite.
+- `./build/bitc examples/hello.bit -o hello.ll`
+  Emit LLVM IR for the sample program.
 - `git status --short`
   Review working tree changes before submitting.
 
